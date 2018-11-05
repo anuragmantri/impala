@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
+import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.impala.authorization.Privilege;
 import org.apache.impala.catalog.Column;
 import org.apache.impala.catalog.FeFsTable;
@@ -67,9 +69,15 @@ class TableDef {
   // List of column definitions
   private final List<ColumnDef> columnDefs_ = Lists.newArrayList();
 
-  // Names of primary key columns. Populated by the parser. An empty value doesn't
+  // Names of primary key and foreign key columns. Populated by the parser. An empty value doesn't
   // mean no primary keys were specified as the columnDefs_ could contain primary keys.
   private final List<String> primaryKeyColNames_ = Lists.newArrayList();
+  private final List<String> foreignKeyColNames_ = Lists.newArrayList();
+
+  //Integrity constraints for primary key and foreign key.
+  private boolean enableCstr;
+  private boolean validateCstr;
+  private boolean relyCstr;
 
   // If true, the table's data will be preserved if dropped.
   private final boolean isExternal_;
@@ -85,6 +93,15 @@ class TableDef {
 
   // Authoritative list of primary key column definitions populated during analysis.
   private final List<ColumnDef> primaryKeyColDefs_ = Lists.newArrayList();
+  private final List<ColumnDef> foreignKeyColDefs = Lists.newArrayList();
+
+  public List<SQLPrimaryKey> getPrimaryKeys() {
+    return primaryKeys_;
+  }
+
+  // List of SQLPrimaryKeys. Populated during analysis.
+  List<SQLPrimaryKey> primaryKeys_ = Lists.newArrayList();
+  List<SQLForeignKey> foreignKeys_ = Lists.newArrayList();
 
   // True if analyze() has been called.
   private boolean isAnalyzed_ = false;
@@ -185,6 +202,7 @@ class TableDef {
   boolean isKuduTable() { return options_.fileFormat == THdfsFileFormat.KUDU; }
   List<String> getPrimaryKeyColumnNames() { return primaryKeyColNames_; }
   List<ColumnDef> getPrimaryKeyColumnDefs() { return primaryKeyColDefs_; }
+
   boolean isExternal() { return isExternal_; }
   boolean getIfNotExists() { return ifNotExists_; }
   Map<String, String> getGeneratedKuduProperties() { return generatedKuduProperties_; }
@@ -207,6 +225,28 @@ class TableDef {
   Map<String, String> getSerdeProperties() { return options_.serdeProperties; }
   THdfsFileFormat getFileFormat() { return options_.fileFormat; }
   RowFormat getRowFormat() { return options_.rowFormat; }
+
+  public TableName getTableName_() {
+    return tableName_;
+  }
+
+  public boolean isEnableCstr() { return enableCstr; }
+
+  public boolean isValidateCstr() { return validateCstr; }
+
+  public boolean isRelyCstr() { return relyCstr; }
+
+  public void setEnableCstr(boolean enableCstr) {
+      this.enableCstr = enableCstr;
+  }
+
+  public void setValidateCstr(boolean validateCstr) {
+    this.validateCstr = validateCstr;
+  }
+
+  public void setRelyCstr(boolean relyCstr) {
+    this.relyCstr = relyCstr;
+  }
 
   /**
    * Analyzes the parameters of a CREATE TABLE statement.
@@ -267,6 +307,7 @@ class TableDef {
    * using the PRIMARY KEY (col,..col) clause.
    */
   private void analyzePrimaryKeys() throws AnalysisException {
+    int cnt = 1;
     for (ColumnDef colDef: columnDefs_) {
       if (colDef.isPrimaryKey()) primaryKeyColDefs_.add(colDef);
     }
@@ -297,7 +338,18 @@ class TableDef {
         throw new AnalysisException("Primary key columns cannot be nullable: " +
             colDef.toString());
       }
+      // We do not support enable and validate for primary keys. Hive API
+      // will take care of default values.
+      if(enableCstr){
+        throw new AnalysisException("ENABLE feature is not supported yet.");
+      }
+      if(validateCstr){
+        throw new AnalysisException("VALIDATE feature is not supported yet.");
+      }
       primaryKeyColDefs_.add(colDef);
+      primaryKeys_.add(new SQLPrimaryKey(getTblName().getDb(), getTbl(),
+              colDef.getColName(), cnt++, null, isEnableCstr(),
+              isValidateCstr(),isRelyCstr()));
     }
   }
 

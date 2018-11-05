@@ -17,10 +17,13 @@
 
 package org.apache.impala.planner;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
+import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.impala.analysis.Analyzer;
 import org.apache.impala.analysis.BinaryPredicate;
 import org.apache.impala.analysis.Expr;
@@ -29,6 +32,7 @@ import org.apache.impala.analysis.SlotDescriptor;
 import org.apache.impala.analysis.SlotRef;
 import org.apache.impala.analysis.TupleId;
 import org.apache.impala.catalog.ColumnStats;
+import org.apache.impala.catalog.FeFsTable;
 import org.apache.impala.catalog.FeTable;
 import org.apache.impala.common.ImpalaException;
 import org.apache.impala.common.Pair;
@@ -91,7 +95,9 @@ public abstract class JoinNode extends PlanNode {
   //   a FK/PK relationship.
   // Theses conjuncts are printed in the explain plan.
   protected List<EqJoinConjunctScanSlots> fkPkEqJoinConjuncts_;
-
+  // To check if RELY constrain was used to detcect a FK/PK relationship
+  protected enum FkPkDetection { CONSTRAINT, HEURISTIC }
+  protected FkPkDetection how = FkPkDetection.HEURISTIC;
   public enum DistributionMode {
     NONE("NONE"),
     BROADCAST("BROADCAST"),
@@ -282,13 +288,9 @@ public abstract class JoinNode extends PlanNode {
 
   /**
    * Returns a list of equi-join conjuncts believed to have a FK/PK relationship based on
-   * whether the right-hand side might be a PK. The conjuncts are grouped by the tuple
-   * ids of the joined base table refs. We prefer to include the conjuncts in the result
-   * unless we have high confidence that a FK/PK relationship is not present. The
-   * right-hand side columns are unlikely to form a PK if their joint NDV is less than
-   * the right-hand side row count. If the joint NDV is close to or higher than the row
-   * count, then it might be a PK.
-   * The given list of eligible join conjuncts must be non-empty.
+   * whether a rely constraint on FK/PK was used. The conjuncts are grouped by the tuple
+   * ids of the joined base table refs. The given list of eligible join conjuncts must
+   * be non-empty.
    */
   private List<EqJoinConjunctScanSlots> getFkPkEqJoinConjuncts(
       List<EqJoinConjunctScanSlots> eqJoinConjunctSlots) {
@@ -297,12 +299,40 @@ public abstract class JoinNode extends PlanNode {
         EqJoinConjunctScanSlots.groupByJoinedTupleIds(eqJoinConjunctSlots);
 
     List<EqJoinConjunctScanSlots> result = null;
+    how = FkPkDetection.CONSTRAINT;
+    // Iterate over all groups of conjuncts that belong to the same joined tuple id pair.
+    // For each group, we check if they form fk/pk relationship based on rely constraint,
+    // if not, we fall back to heuristic approach.
+    List<List<EqJoinConjunctScanSlots>> fkPkCandidates = new ArrayList<>(scanSlotsByJoinedTids.values());
+    for (List<EqJoinConjunctScanSlots> fkPkCandidate: fkPkCandidates) {
+      for (EqJoinConjunctScanSlots slots: fkPkCandidate) {
+        if(!slots.isFkPk()){
+          return heuristicFkPkEqJoinConjuncts(fkPkCandidates);
+        }
+      }
+      if (result == null) result = Lists.newArrayList();
+      result.addAll(fkPkCandidate);
+    }
+    return result;
+  }
+
+  /**
+   * Returns a list of equi-join conjuncts that were detected using a heuristic approach.
+   * We prefer to include the conjuncts in the result unless we have high confidence that a
+   * FK/PK relationship is not present The right-hand side columns are unlikely to form a
+   * PK if their joint NDV is less than the right-hand side row count.
+   * If the joint NDV is close to or higher than the row count, then it might be a PK.
+   */
+  private List<EqJoinConjunctScanSlots> heuristicFkPkEqJoinConjuncts(
+          List<List<EqJoinConjunctScanSlots>> fkPkCandidates){
+    List<EqJoinConjunctScanSlots> result = null;
+    how = FkPkDetection.HEURISTIC;
     // Iterate over all groups of conjuncts that belong to the same joined tuple id pair.
     // For each group, we compute the join NDV of the rhs slots and compare it to the
     // number of rows in the rhs table.
-    for (List<EqJoinConjunctScanSlots> fkPkCandidate: scanSlotsByJoinedTids.values()) {
+    for (List<EqJoinConjunctScanSlots> fkPkCandidate: fkPkCandidates) {
       double jointNdv = 1.0;
-      for (EqJoinConjunctScanSlots slots: fkPkCandidate) jointNdv *= slots.rhsNdv();
+      for (EqJoinConjunctScanSlots slots: fkPkCandidate) { jointNdv *= slots.rhsNdv(); }
       double rhsNumRows = fkPkCandidate.get(0).rhsNumRows();
       if (jointNdv >= Math.round(rhsNumRows * (1.0 - FK_PK_MAX_STATS_DELTA_PERC))) {
         // We cannot disprove that the RHS is a PK.
@@ -406,6 +436,28 @@ public abstract class JoinNode extends PlanNode {
     }
     public double lhsNumRows() { return lhs_.getParent().getTable().getNumRows(); }
     public double rhsNumRows() { return rhs_.getParent().getTable().getNumRows(); }
+
+    // There is a FK/PK relationship based on "rely" constraint.
+    public boolean isFkPk() {
+      List<SQLForeignKey> lhsForeignKeys_ = lhs_.getPath().getRootTable() instanceof FeFsTable ?
+              ((FeFsTable) lhs_.getPath().getRootTable()).getForeignKeys() : null;
+
+
+      // TODO: Also check with Primary Keys. In future if we support Unique Keys, this should be standard.
+      // TODO: Possibly reverse this check so we compare all slots with FK/PK relationship.
+      if (lhsForeignKeys_ != null) {
+       for (SQLForeignKey fkey : lhsForeignKeys_) {
+        if (fkey.isRely_cstr() && fkey.getFktable_name().equals(lhs_.getParent().getTableName().getTbl())
+                && fkey.getFkcolumn_name().equals(lhs_.getColumn().getName()) &&
+                fkey.getPktable_name().equals(rhs_.getParent().getTableName().getTbl())
+                && fkey.getPkcolumn_name().equals(rhs_.getColumn().getName())) {
+          // There is FK/PK with RELY.
+          return true;
+        }
+      }
+    }
+    return false;
+    }
 
     public TupleId lhsTid() { return lhs_.getParent().getId(); }
     public TupleId rhsTid() { return rhs_.getParent().getId(); }

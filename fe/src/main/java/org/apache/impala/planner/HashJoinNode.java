@@ -182,6 +182,13 @@ public class HashJoinNode extends JoinNode {
           } else {
             output.append(Joiner.on(", ").join(fkPkEqJoinConjuncts_));
           }
+          // Print if fk/pk was detected using constraints or heuristic
+          if(how == FkPkDetection.CONSTRAINT){
+            output.append(" (Detected by FK/PK constraint)");
+          }
+          else if(how == FkPkDetection.HEURISTIC){
+            output.append(" (Detected using Heuristic)");
+          }
           output.append("\n");
         }
       }

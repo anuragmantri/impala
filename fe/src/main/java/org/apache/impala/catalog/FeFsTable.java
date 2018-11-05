@@ -26,6 +26,8 @@ import java.util.Set;
 import java.util.TreeMap;
 
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
+import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.impala.analysis.Expr;
 import org.apache.impala.analysis.LiteralExpr;
 import org.apache.impala.analysis.PartitionKeyValue;
@@ -184,6 +186,16 @@ public interface FeFsTable extends FeTable {
    * @return the index of hosts that store replicas of blocks of this table.
    */
   ListMap<TNetworkAddress> getHostIndex();
+
+  /**
+   * @return Primary Keys information
+   */
+  List<SQLPrimaryKey> getPrimaryKeys();
+
+  /**
+   * @return Foreign Keys information
+   */
+  List<SQLForeignKey> getForeignKeys();
 
   /**
    * Utility functions for operating on FeFsTable. When we move fully to Java 8,

@@ -22,6 +22,7 @@ import java.util.Map;
 
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaParseException;
+import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.impala.authorization.PrivilegeRequestBuilder;
 import org.apache.impala.catalog.KuduTable;
 import org.apache.impala.catalog.RowFormat;
@@ -100,6 +101,9 @@ public class CreateTableStmt extends StatementBase {
   public List<ColumnDef> getPrimaryKeyColumnDefs() {
     return tableDef_.getPrimaryKeyColumnDefs();
   }
+  public List<SQLPrimaryKey> getPrimaryKeys() {
+    return tableDef_.getPrimaryKeys();
+  }
   public boolean isExternal() { return tableDef_.isExternal(); }
   public List<ColumnDef> getPartitionColumnDefs() {
     return tableDef_.getPartitionColumnDefs();
@@ -127,6 +131,9 @@ public class CreateTableStmt extends StatementBase {
   // definitions, those are not included here (they are stored in the ColumnDefs).
   List<String> getTblPrimaryKeyColumnNames() {
     return tableDef_.getPrimaryKeyColumnNames();
+  }
+  List<SQLPrimaryKey> getSqlPrimaryKeys() {
+    return tableDef_.getPrimaryKeys();
   }
 
   /**
@@ -179,6 +186,11 @@ public class CreateTableStmt extends StatementBase {
     for (ColumnDef pkColDef: getPrimaryKeyColumnDefs()) {
       params.addToPrimary_key_column_names(pkColDef.getColName());
     }
+
+    for(SQLPrimaryKey pk: getPrimaryKeys() ){
+      params.addToPrimary_keys(pk);
+    }
+
     params.setServer_name(serverName_);
     return params;
   }
@@ -225,9 +237,6 @@ public class CreateTableStmt extends StatementBase {
       }
       AnalysisUtils.throwIfNotEmpty(getKuduPartitionParams(),
           "Only Kudu tables can use the PARTITION BY clause.");
-      if (hasPrimaryKey()) {
-        throw new AnalysisException("Only Kudu tables can specify a PRIMARY KEY.");
-      }
       return;
     }
 
