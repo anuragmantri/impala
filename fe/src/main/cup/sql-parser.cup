@@ -285,7 +285,7 @@ terminal
   KW_FUNCTIONS, KW_GRANT, KW_GROUP, KW_HASH, KW_IGNORE, KW_HAVING, KW_IF, KW_ILIKE,
   KW_IN, KW_INCREMENTAL, KW_INIT_FN, KW_INNER, KW_INPATH, KW_INSERT, KW_INT,
   KW_INTERMEDIATE, KW_INTERVAL, KW_INTO, KW_INVALIDATE, KW_IREGEXP, KW_IS, KW_JOIN,
-  KW_KEY, KW_KUDU, KW_LAST, KW_LEFT, KW_LIKE, KW_LIMIT, KW_LINES, KW_LOAD, KW_LOCATION, KW_MAP,
+  KW_KUDU, KW_LAST, KW_LEFT, KW_LIKE, KW_LIMIT, KW_LINES, KW_LOAD, KW_LOCATION, KW_MAP,
   KW_MERGE_FN, KW_METADATA, KW_NORELY, KW_NOT, KW_NOVALIDATE, KW_NULL, KW_NULLS, KW_OFFSET, KW_ON, KW_OR, KW_ORC,
   KW_ORDER, KW_OUTER, KW_OVER, KW_OVERWRITE, KW_PARQUET, KW_PARQUETFILE, KW_PARTITION,
   KW_PARTITIONED, KW_PARTITIONS, KW_PRECEDING, KW_PREPARE_FN, KW_PRIMARY, KW_PRODUCED,
@@ -507,6 +507,8 @@ nonterminal Expr default_val;
 nonterminal LiteralExpr block_size_val;
 nonterminal Pair<Option, Object> column_option;
 nonterminal Map<Option, Object> column_options_map;
+//used for integrity constraints(DISABLE, NOVALIDATE, RELY)
+nonterminal Boolean enable_spec, validate_spec, rely_spec;
 
 // For GRANT/REVOKE/AUTH DDL statements
 nonterminal ShowRolesStmt show_roles_stmt;
@@ -1364,11 +1366,63 @@ tbl_def_with_col_defs ::=
     tbl_def.getPrimaryKeyColumnNames().addAll(primary_keys);
     RESULT = tbl_def;
   :}
+  // Adding Primary Keys and Foreign Keys constraints
+  // PRIMARY KEY(..) DISABLE NOVALIDATE RELY
+  | tbl_def_without_col_defs:tbl_def LPAREN column_def_list:list COMMA
+    primary_keys:primary_keys enable_spec:enable_spec validate_spec:validate_spec rely_spec:rely_spec
+    RPAREN
+  {:
+    tbl_def.getColumnDefs().addAll(list);
+    tbl_def.getPrimaryKeyColumnNames().addAll(primary_keys);
+    tbl_def.setEnableCstr(enable_spec);
+    tbl_def.setValidateCstr(validate_spec);
+    tbl_def.setRelyCstr(rely_spec);
+    RESULT = tbl_def;
+  :}
+  // PRIMARY KEY(..) DISABLE NOVALIDATE RELY FOREIGN KEY (...) REFERENCES parent_table(...)
+//  | tbl_def_without_col_defs:tbl_def LPAREN column_def_list:list COMMA
+//    primary_keys:primary_keys enable_spec:enable_spec validate_spec:validate_spec rely_spec:relyspec
+//    foreign_keys:foreign_keys enable_spec:fk_enable_spec validate_spec:fk_validate_spec
+//    rely_spec:fk_rely_spec RPAREN
+//  {:
+//    tbl_def.getColumnDefs().addAll(list);
+//    tbl_def.getPrimaryKeyColumnNames().addAll(primary_keys);
+//    tbl_def.getForeignKeyColumnNames().addAll(foreign_keys);
+//    RESULT = tbl_def;
+//  :}
   ;
 
 primary_keys ::=
   KW_PRIMARY key_ident LPAREN ident_list:col_names RPAREN
   {: RESULT = col_names; :}
+  ;
+
+rely_spec ::=
+  KW_RELY
+  {: RESULT = true; :}
+  | KW_NORELY
+  {: RESULT = false; :}
+  |
+  {: RESULT = false; :}
+  ;
+
+validate_spec ::=
+  KW_VALIDATE
+  {: RESULT = true; :}
+  | KW_NOVALIDATE
+  {: RESULT = false; :}
+  |
+  {: RESULT = false; :}
+
+  ;
+
+enable_spec ::=
+  KW_ENABLE
+  {: RESULT = true; :}
+  | KW_DISABLE
+  {: RESULT = false; :}
+  |
+  {: RESULT = false; :}
   ;
 
 tbl_options ::=
@@ -3603,8 +3657,6 @@ word ::=
   | KW_IS:r
   {: RESULT = r.toString(); :}
   | KW_JOIN:r
-  {: RESULT = r.toString(); :}
-  | KW_KEY:r
   {: RESULT = r.toString(); :}
   | KW_KUDU:r
   {: RESULT = r.toString(); :}

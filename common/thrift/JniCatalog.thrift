@@ -22,6 +22,7 @@ include "CatalogObjects.thrift"
 include "Types.thrift"
 include "Status.thrift"
 include "TCLIService.thrift"
+include "hive_metastore.thrift"
 
 // This is a short value due to the HDFS API limits
 const i16 HDFS_DEFAULT_CACHE_REPLICATION_FACTOR = 1
@@ -518,6 +519,12 @@ struct TCreateTableParams {
   // The server name for security privileges when authorization is enabled.
   // TODO: Need to cleanup:IMPALA-7553
   17: optional string server_name
+
+  // Primary Keys Structures for Hive API
+  18: optional list<hive_metastore.SQLPrimaryKey> primary_keys,
+
+  // Foreign Keys Structures for Hive API
+  19: optional list<hive_metastore.SQLForeignKey> foreign_keys
 }
 
 // Parameters of a CREATE VIEW or ALTER VIEW AS SELECT command

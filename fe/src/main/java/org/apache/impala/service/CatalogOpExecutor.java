@@ -43,6 +43,8 @@ import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
 import org.apache.hadoop.hive.metastore.api.Partition;
 import org.apache.hadoop.hive.metastore.api.PrincipalType;
+import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
+import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.impala.analysis.AlterTableSortByStmt;
@@ -1677,8 +1679,9 @@ public class CatalogOpExecutor {
     if (KuduTable.isKuduTable(tbl)) return createKuduTable(tbl, params, response);
     Preconditions.checkState(params.getColumns().size() > 0,
         "Empty column list given as argument to Catalog.createTable");
+
     return createTable(tbl, params.if_not_exists, params.getCache_op(),
-        params.server_name, response);
+        params.server_name, params.primary_keys, response);
   }
 
   /**
@@ -1802,12 +1805,17 @@ public class CatalogOpExecutor {
    * Returns true if a new table was created as part of this call, false otherwise.
    */
   private boolean createTable(org.apache.hadoop.hive.metastore.api.Table newTable,
-      boolean if_not_exists, THdfsCachingOp cacheOp, String serverName,
+      boolean if_not_exists, THdfsCachingOp cacheOp, String serverName, List<SQLPrimaryKey> primaryKeys,
       TDdlExecResponse response) throws ImpalaException {
     Preconditions.checkState(!KuduTable.isKuduTable(newTable));
     synchronized (metastoreDdlLock_) {
       try (MetaStoreClient msClient = catalog_.getMetaStoreClient()) {
-        msClient.getHiveClient().createTable(newTable);
+        if(primaryKeys != null && primaryKeys.size() > 0){
+          msClient.getHiveClient().createTableWithConstraints(newTable, primaryKeys, new ArrayList<>());
+        }
+        else{
+          msClient.getHiveClient().createTable(newTable);
+        }
         addSummary(response, "Table has been created.");
         // If this table should be cached, and the table location was not specified by
         // the user, an extra step is needed to read the table to find the location.
@@ -1891,7 +1899,7 @@ public class CatalogOpExecutor {
         new org.apache.hadoop.hive.metastore.api.Table();
     setCreateViewAttributes(params, view);
     LOG.trace(String.format("Creating view %s", tableName));
-    if (!createTable(view, params.if_not_exists, null, params.server_name, response)) {
+    if (!createTable(view, params.if_not_exists, null, params.server_name, null, response)) {
       addSummary(response, "View already exists.");
     } else {
       addSummary(response, "View has been created.");
@@ -1984,7 +1992,7 @@ public class CatalogOpExecutor {
     // Set the row count of this table to unknown.
     tbl.putToParameters(StatsSetupConst.ROW_COUNT, "-1");
     LOG.trace(String.format("Creating table %s LIKE %s", tblName, srcTblName));
-    createTable(tbl, params.if_not_exists, null, params.server_name, response);
+    createTable(tbl, params.if_not_exists, null, params.server_name, null, response);
   }
 
   /**
