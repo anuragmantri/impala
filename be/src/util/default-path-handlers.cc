@@ -48,6 +48,7 @@ using namespace rapidjson;
 using namespace strings;
 
 DECLARE_bool(enable_process_lifetime_heap_profiling);
+DECLARE_bool(use_local_catalog);
 DEFINE_int64(web_log_bytes, 1024 * 1024,
     "The maximum number of bytes to display on the debug webserver's log page");
 
@@ -250,6 +251,8 @@ void RootHandler(const Webserver::ArgumentMap& args, Document* document) {
   const char* is_ndebug = "false";
 #endif
 
+  Value use_local_catalog(FLAGS_use_local_catalog);
+  document->AddMember("use_local_catalog", use_local_catalog, document->GetAllocator());
   Value build_flags(kArrayType);
   AddBuildFlag("is_ndebug", is_ndebug, document, &build_flags);
   string cmake_build_type(GetCMakeBuildType());
