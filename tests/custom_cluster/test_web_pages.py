@@ -38,3 +38,24 @@ class TestWebPage(CustomClusterTestSuite):
     assert flag[0]["default"] == "false"
     assert flag[0]["current"] == "true"
     assert flag[0]["experimental"]
+
+  @pytest.mark.execute_serially
+  @CustomClusterTestSuite.with_args(
+      impalad_args="--use_local_catalog=true",
+      catalogd_args="--catalog_topic_mode=minimal"
+  )
+  def test_observability(self):
+    """
+    Tests observabilty on the web UI by scraping the webpage
+    and search for patterns
+    """
+
+    self.test_root_webpage()
+
+  def test_root_webpage(self):
+    """ Test observability on root webpage """
+    response = requests.get("http://localhost:25000/")
+    assert response.status_code == requests.codes.ok
+    # Test 'Local Catalog' Banner appears on root page
+    assert '(Local Catalog Mode)' in response.text
+    
