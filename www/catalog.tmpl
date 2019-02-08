@@ -39,14 +39,14 @@ under the License.
       <tbody>
         {{#large_tables}}
         <tr>
-          {{?use_local_catalog}}
+          {{^fqtn}}
           <td> {{name}} </td>
-          {{/use_local_catalog}}
-          {{^use_local_catalog}}
+          {{/fqtn}}
+          {{?fqtn}}
           <td>
             <a href="catalog_object?object_type=TABLE&object_name={{fqtn}}">{{name}}</a>
           </td>
-          {{/use_local_catalog}}
+          {{/fqtn}}
           <td>{{mem_estimate}}</td>
           <td><a href="table_metrics?name={{name}}">{{name}}-metrics</a></td>
         </tr>
@@ -86,14 +86,14 @@ under the License.
       <tbody>
         {{#frequent_tables}}
         <tr>
-          {{?use_local_catalog}}
+          {{^fqtn}}
           <td> {{name}} </td>
-          {{/use_local_catalog}}
-          {{^use_local_catalog}}
+          {{/fqtn}}
+          {{?fqtn}}
           <td>
             <a href="catalog_object?object_type=TABLE&object_name={{fqtn}}">{{name}}</a>
           </td>
-          {{/use_local_catalog}}
+          {{/fqtn}}
           <td>{{num_metadata_ops}}</td>
           <td><a href="table_metrics?name={{name}}">{{name}}-metrics</a></td>
         </tr>
@@ -142,14 +142,14 @@ under the License.
       <tbody>
         {{#tables}}
         <tr>
-          {{?use_local_catalog}}
+          {{^fqtn}}
           <td> {{name}} </td>
-          {{/use_local_catalog}}
-          {{^use_local_catalog}}
+          {{/fqtn}}
+          {{?fqtn}}
           <td>
             <a href="catalog_object?object_type=TABLE&object_name={{fqtn}}">{{name}}</a>
           </td>
-          {{/use_local_catalog}}
+          {{/fqtn}}
           {{?has_metrics}}
           <td><a href="table_metrics?name={{fqtn}}">{{name}}-metrics</a></td>
           {{/has_metrics}}

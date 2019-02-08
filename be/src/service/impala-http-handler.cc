@@ -97,8 +97,9 @@ void ImpalaHttpHandler::RegisterHandlers(Webserver* webserver) {
   webserver->RegisterUrlCallback("/sessions", "sessions.tmpl",
       MakeCallback(this, &ImpalaHttpHandler::SessionsHandler), true);
 
-  webserver->RegisterUrlCallback("/catalog", "catalog.tmpl",
-      MakeCallback(this, &ImpalaHttpHandler::CatalogHandler), true);
+  if(!FLAGS_use_local_catalog)
+       webserver->RegisterUrlCallback("/catalog_object", "catalog_object.tmpl",
+            MakeCallback(this, &ImpalaHttpHandler::CatalogObjectsHandler), false);
 
   webserver->RegisterUrlCallback("/catalog_object", "catalog_object.tmpl",
       MakeCallback(this, &ImpalaHttpHandler::CatalogObjectsHandler), false);
@@ -536,9 +537,11 @@ void ImpalaHttpHandler::CatalogHandler(const Webserver::ArgumentMap& args,
     Value table_array(kArrayType);
     for (const string& table: get_table_results.tables) {
       Value table_obj(kObjectType);
-      Value fq_name(Substitute("$0.$1", db.db_name, table).c_str(),
-          document->GetAllocator());
-      table_obj.AddMember("fqtn", fq_name, document->GetAllocator());
+      if(!FLAGS_use_local_catalog){
+        Value fq_name(Substitute("$0.$1", db.db_name, table).c_str(),
+           document->GetAllocator());
+        table_obj.AddMember("fqtn", fq_name, document->GetAllocator());
+      }
       Value table_name(table.c_str(), document->GetAllocator());
       table_obj.AddMember("name", table_name, document->GetAllocator());
       table_obj.AddMember("use_local_catalog", FLAGS_use_local_catalog,
@@ -554,6 +557,7 @@ void ImpalaHttpHandler::CatalogHandler(const Webserver::ArgumentMap& args,
 
 void ImpalaHttpHandler::CatalogObjectsHandler(const Webserver::ArgumentMap& args,
     Document* document) {
+  DCHECK(!FLAGS_use_local_catalog);
   Webserver::ArgumentMap::const_iterator object_type_arg = args.find("object_type");
   Webserver::ArgumentMap::const_iterator object_name_arg = args.find("object_name");
   if (object_type_arg != args.end() && object_name_arg != args.end()) {
