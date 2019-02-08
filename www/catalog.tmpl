@@ -130,8 +130,14 @@ under the License.
       <tbody>
         {{#tables}}
         <tr>
-          <td><a href="catalog_object?object_type=TABLE&object_name={{fqtn}}">{{name}}</a>
+          {{?use_local_catalog}}
+          <td> {{name}} </td>
+          {{/use_local_catalog}}
+          {{^use_local_catalog}}
+          <td>
+            <a href="catalog_object?object_type=TABLE&object_name={{fqtn}}">{{name}}</a>
           </td>
+          {{/use_local_catalog}}
           {{?has_metrics}}
           <td><a href="table_metrics?name={{fqtn}}">{{name}}-metrics</a></td>
           {{/has_metrics}}

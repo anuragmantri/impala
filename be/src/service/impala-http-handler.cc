@@ -55,6 +55,7 @@ using namespace rapidjson;
 using namespace strings;
 
 DECLARE_int32(query_log_size);
+DECLARE_bool(use_local_catalog);
 
 namespace {
 
@@ -540,6 +541,8 @@ void ImpalaHttpHandler::CatalogHandler(const Webserver::ArgumentMap& args,
       table_obj.AddMember("fqtn", fq_name, document->GetAllocator());
       Value table_name(table.c_str(), document->GetAllocator());
       table_obj.AddMember("name", table_name, document->GetAllocator());
+      table_obj.AddMember("use_local_catalog", FLAGS_use_local_catalog,
+    	  document->GetAllocator());
       table_array.PushBack(table_obj, document->GetAllocator());
     }
     database.AddMember("num_tables", table_array.Size(), document->GetAllocator());
