@@ -38,3 +38,10 @@ class TestWebPage(CustomClusterTestSuite):
     assert flag[0]["default"] == "false"
     assert flag[0]["current"] == "true"
     assert flag[0]["experimental"]
+
+  @pytest.mark.execute_serially
+  def test_observability(self):
+    # Make sure /catalog_object endpoint is enabled.
+    response = requests.get("http://localhost:25000/catalog_object")
+    assert 'No URI handler for &apos;/catalog_object&apos;'\
+      not in response

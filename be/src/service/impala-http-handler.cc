@@ -55,6 +55,7 @@ using namespace rapidjson;
 using namespace strings;
 
 DECLARE_int32(query_log_size);
+DECLARE_bool(use_local_catalog);
 
 namespace {
 
@@ -99,8 +100,10 @@ void ImpalaHttpHandler::RegisterHandlers(Webserver* webserver) {
   webserver->RegisterUrlCallback("/catalog", "catalog.tmpl",
       MakeCallback(this, &ImpalaHttpHandler::CatalogHandler), true);
 
-  webserver->RegisterUrlCallback("/catalog_object", "catalog_object.tmpl",
-      MakeCallback(this, &ImpalaHttpHandler::CatalogObjectsHandler), false);
+  if(!FLAGS_use_local_catalog) {
+      webserver->RegisterUrlCallback("/catalog_object", "catalog_object.tmpl",
+          MakeCallback(this, &ImpalaHttpHandler::CatalogObjectsHandler), false);
+  }
 
   webserver->RegisterUrlCallback("/query_profile", "query_profile.tmpl",
       MakeCallback(this, &ImpalaHttpHandler::QueryProfileHandler), false);
@@ -535,15 +538,24 @@ void ImpalaHttpHandler::CatalogHandler(const Webserver::ArgumentMap& args,
     Value table_array(kArrayType);
     for (const string& table: get_table_results.tables) {
       Value table_obj(kObjectType);
-      Value fq_name(Substitute("$0.$1", db.db_name, table).c_str(),
-          document->GetAllocator());
-      table_obj.AddMember("fqtn", fq_name, document->GetAllocator());
+      if(!FLAGS_use_local_catalog){
+        // Creates hyperlinks for /catalog_object. This is disabled in local catalog mode
+        Value fq_name(Substitute("$0.$1", db.db_name, table).c_str(),
+           document->GetAllocator());
+        table_obj.AddMember("fqtn", fq_name, document->GetAllocator());
+      }
       Value table_name(table.c_str(), document->GetAllocator());
       table_obj.AddMember("name", table_name, document->GetAllocator());
+      Value use_local_catalog(FLAGS_use_local_catalog);
+      table_obj.AddMember("use_local_catalog", FLAGS_use_local_catalog,
+          document->GetAllocator());
       table_array.PushBack(table_obj, document->GetAllocator());
     }
     database.AddMember("num_tables", table_array.Size(), document->GetAllocator());
     database.AddMember("tables", table_array, document->GetAllocator());
+    Value use_local_catalog(FLAGS_use_local_catalog);
+    database.AddMember("use_local_catalog", use_local_catalog,
+          document->GetAllocator());
     databases.PushBack(database, document->GetAllocator());
   }
   document->AddMember("databases", databases, document->GetAllocator());
@@ -551,6 +563,7 @@ void ImpalaHttpHandler::CatalogHandler(const Webserver::ArgumentMap& args,
 
 void ImpalaHttpHandler::CatalogObjectsHandler(const Webserver::ArgumentMap& args,
     Document* document) {
+  DCHECK(!FLAGS_use_local_catalog);
   Webserver::ArgumentMap::const_iterator object_type_arg = args.find("object_type");
   Webserver::ArgumentMap::const_iterator object_name_arg = args.find("object_name");
   if (object_type_arg != args.end() && object_name_arg != args.end()) {
