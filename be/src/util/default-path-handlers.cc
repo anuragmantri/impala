@@ -251,6 +251,8 @@ void RootHandler(const Webserver::ArgumentMap& args, Document* document) {
   const char* is_ndebug = "false";
 #endif
 
+  Value use_local_catalog(FLAGS_use_local_catalog);
+  document->AddMember("use_local_catalog", use_local_catalog, document->GetAllocator());
   Value build_flags(kArrayType);
   AddBuildFlag("is_ndebug", is_ndebug, document, &build_flags);
   string cmake_build_type(GetCMakeBuildType());
