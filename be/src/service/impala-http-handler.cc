@@ -97,8 +97,9 @@ void ImpalaHttpHandler::RegisterHandlers(Webserver* webserver) {
   webserver->RegisterUrlCallback("/sessions", "sessions.tmpl",
       MakeCallback(this, &ImpalaHttpHandler::SessionsHandler), true);
 
-  webserver->RegisterUrlCallback("/catalog", "catalog.tmpl",
-      MakeCallback(this, &ImpalaHttpHandler::CatalogHandler), true);
+  if(!FLAGS_use_local_catalog)
+       webserver->RegisterUrlCallback("/catalog_object", "catalog_object.tmpl",
+            MakeCallback(this, &ImpalaHttpHandler::CatalogObjectsHandler), false);
 
   if(!FLAGS_use_local_catalog) {
       webserver->RegisterUrlCallback("/catalog_object", "catalog_object.tmpl",
