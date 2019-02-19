@@ -27,7 +27,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.fs.permission.FsAction;
+import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
+import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.impala.authorization.Privilege;
 import org.apache.impala.catalog.Column;
 import org.apache.impala.catalog.FeFsTable;
@@ -91,6 +94,18 @@ class TableDef {
 
   // Authoritative list of primary key column definitions populated during analysis.
   private final List<ColumnDef> primaryKeyColDefs_ = new ArrayList<>();
+
+  // Primary keys and foreign keys populated during analysis.
+  List<SQLPrimaryKey> primaryKeys_ = new ArrayList<>();
+  List<SQLForeignKey> foreignKeys_ = new ArrayList<>();
+
+  public List<SQLPrimaryKey> getPrimaryKeys() {
+    return primaryKeys_;
+  }
+
+  public List<SQLForeignKey> getForeignKeys() {
+    return foreignKeys_;
+  }
 
   // True if analyze() has been called.
   private boolean isAnalyzed_ = false;
@@ -165,6 +180,81 @@ class TableDef {
 
   private Options options_;
 
+  /**
+   * Primary Key attributes grouped together to be populated by the parser.
+   * Currently only defined for HDFS tables.
+   */
+  static class PrimaryKey {
+
+    //Primary key table name
+    final TableName pkTableName;
+
+    //Primary Key columns
+    final List<String> primaryKeyColNames;
+
+    //Primary Key constraint name
+    final String pkConstraintName;
+
+    //Constraints
+    final boolean relyCstr;
+    final boolean validateCstr;
+    final boolean enableCstr;
+
+
+    public PrimaryKey(TableName pkTableName, List<String> primaryKeyColNames,
+                      String pkConstraintName, boolean relyCstr,
+                      boolean validateCstr, boolean enableCstr) {
+      this.pkTableName = pkTableName;
+      this.primaryKeyColNames = primaryKeyColNames;
+      this.pkConstraintName = pkConstraintName;
+      this.relyCstr = relyCstr;
+      this.validateCstr = validateCstr;
+      this.enableCstr = enableCstr;
+    }
+  }
+
+
+  /**
+   * Foreign Key attributes grouped together to be populated by the parser.
+   * Currently only defined for HDFS tables. An FK definition is of the form
+   * "foreign key foreign key(col1, col2)  references pk_tbl(col3, col4)"
+   */
+  static class ForeignKey {
+    //Primary key table
+    final TableName pkTableName;
+
+    //Primary key cols
+    final List<String> primaryKeyColNames;
+
+    //Foreign key cols
+    final List<String> forignKeyColNames;
+
+    //Name of fk
+    final String fkConstrintName;
+
+    //Constraints
+    final boolean relyCstr;
+    final boolean validateCstr;
+    final boolean enableCstr;
+
+    ForeignKey(TableName pkTableName, List<String> primaryKeyColNames,
+               List<String> forignKeyColNames, String fkName, boolean relyCstr,
+               boolean validateCstr, boolean enableCstr) {
+      this.pkTableName = pkTableName;
+      this.primaryKeyColNames = primaryKeyColNames;
+      this.forignKeyColNames = forignKeyColNames;
+      this.relyCstr = relyCstr;
+      this.validateCstr = validateCstr;
+      this.enableCstr = enableCstr;
+      this.fkConstrintName = fkName;
+    }
+  }
+
+  //Only one primary key definition is supported.
+  private PrimaryKey primaryKey;
+  // Multiple foreign keys are supported.
+  private List<ForeignKey> foreignKeysList_ = new ArrayList<>();
+
   // Result of analysis.
   private TableName fqTableName_;
 
@@ -194,6 +284,9 @@ class TableDef {
     return columnDefs_.stream().map(col -> col.getType()).collect(Collectors.toList());
   }
 
+  public void setPrimaryKey(TableDef.PrimaryKey primaryKey) {
+    this.primaryKey = primaryKey;
+  }
   List<String> getPartitionColumnNames() {
     return ColumnDef.toColumnNames(getPartitionColumnDefs());
   }
@@ -228,6 +321,7 @@ class TableDef {
   THdfsFileFormat getFileFormat() { return options_.fileFormat; }
   RowFormat getRowFormat() { return options_.rowFormat; }
   TSortingOrder getSortingOrder() { return options_.sortingOrder; }
+  List<ForeignKey> getForeignKeysList() { return foreignKeysList_; }
 
   /**
    * Analyzes the parameters of a CREATE TABLE statement.
@@ -240,6 +334,7 @@ class TableDef {
     analyzeAcidProperties(analyzer);
     analyzeColumnDefs(analyzer);
     analyzePrimaryKeys();
+    analyzeForeignKeys(analyzer);
 
     if (analyzer.dbContainsTable(getTblName().getDb(), getTbl(), Privilege.CREATE)
         && !getIfNotExists()) {
@@ -289,6 +384,7 @@ class TableDef {
    * using the PRIMARY KEY (col,..col) clause.
    */
   private void analyzePrimaryKeys() throws AnalysisException {
+    int cnt = 1;
     for (ColumnDef colDef: columnDefs_) {
       if (colDef.isPrimaryKey()) primaryKeyColDefs_.add(colDef);
     }
@@ -297,7 +393,16 @@ class TableDef {
           "Composite primary keys can be specified using the " +
           "PRIMARY KEY (col1, col2, ...) syntax at the end of the column definition.");
     }
-    if (primaryKeyColNames_.isEmpty()) return;
+
+    if (primaryKeyColNames_.isEmpty()) {
+      if(primaryKey == null || primaryKey.primaryKeyColNames.isEmpty()){
+        return;
+      }
+      else {
+        getPrimaryKeyColumnNames().addAll(primaryKey.primaryKeyColNames);
+      }
+    }
+
     if (!primaryKeyColDefs_.isEmpty()) {
       throw new AnalysisException("Multiple primary keys specified. " +
           "Composite primary keys can be specified using the " +
@@ -319,8 +424,104 @@ class TableDef {
         throw new AnalysisException("Primary key columns cannot be nullable: " +
             colDef.toString());
       }
+
+      // We do not support enable and validate for primary keys.
+      if(primaryKey.enableCstr){
+        throw new AnalysisException("ENABLE feature is not supported yet.");
+      }
+      if(primaryKey.validateCstr){
+        throw new AnalysisException("VALIDATE feature is not supported yet.");
+      }
       primaryKeyColDefs_.add(colDef);
+      String constraintName = generateConstraintName(getTblName().getDb(), getTbl(), "pk");
+      primaryKeys_.add(new SQLPrimaryKey(getTblName().getDb(), getTbl(),
+              colDef.getColName(), cnt++, constraintName, primaryKey.enableCstr,
+              primaryKey.validateCstr,primaryKey.relyCstr));
     }
+  }
+
+  private void analyzeForeignKeys(Analyzer analyzer) throws AnalysisException {
+    if(getForeignKeysList().size() == 0 || getForeignKeysList() == null) return;
+    for(ForeignKey fk: getForeignKeysList() ){
+      // Foreign Key and Primarry Key columns don't match.
+      if(fk.forignKeyColNames.size() != fk.primaryKeyColNames.size()){
+        throw new AnalysisException("The number of foreign key columns should be same" +
+            "as the number of parent key columns.");
+      }
+      String parentDb = fk.pkTableName.getDb();
+      if(parentDb == null) parentDb = analyzer.getDefaultDb();
+      //Check if parent table exits
+      if(!analyzer.dbContainsTable(parentDb, fk.pkTableName.getTbl(),
+          Privilege.VIEW_METADATA )){
+        throw new AnalysisException("Parent table not found:"
+            + analyzer.getFqTableName(fk.pkTableName));
+      }
+
+      // We do not support ENABLE and VALIDATE.
+      if(fk.enableCstr){
+        throw new AnalysisException("ENABLE feature is not supported yet.");
+      }
+
+      if(fk.validateCstr){
+        throw new AnalysisException("VALIDATE feature is not supported yet.");
+      }
+
+      //Check for primary key cols in parent table
+      FeTable parent_table = analyzer.getTable(fk.pkTableName, Privilege.VIEW_METADATA);
+
+
+      for(String pkCol : fk.primaryKeyColNames){
+        if(!parent_table.getColumnNames().contains(pkCol.toLowerCase())){
+          throw new AnalysisException("Parent column not found: " + pkCol.toLowerCase());
+        }
+      }
+      String constraintName = null;
+      for(int i = 0; i<fk.forignKeyColNames.size(); i++){
+        if(fk.fkConstrintName == null){
+          if(i == 0){
+            constraintName = generateConstraintName(getTblName().getDb(), getTbl(),
+                parentDb,fk.pkTableName.getTbl(),fk.forignKeyColNames.get(i).
+                toLowerCase(), fk.primaryKeyColNames.get(i).toLowerCase(), "fk");
+          }
+        }
+        else{
+          constraintName = fk.fkConstrintName;
+        }
+        SQLForeignKey sqlForeignKey = new SQLForeignKey();
+        sqlForeignKey.setPktable_db(parentDb);
+        sqlForeignKey.setPktable_name(fk.pkTableName.getTbl());
+        sqlForeignKey.setFktable_db(getTblName().getDb());
+        sqlForeignKey.setFktable_name(getTbl());
+        sqlForeignKey.setPkcolumn_name(fk.primaryKeyColNames.get(i).toLowerCase());
+        sqlForeignKey.setFk_name(constraintName);
+        sqlForeignKey.setKey_seq(i+1);
+        sqlForeignKey.setFkcolumn_name(fk.forignKeyColNames.get(i).toLowerCase());
+        sqlForeignKey.setRely_cstr(fk.relyCstr);
+        getForeignKeys().add( sqlForeignKey );
+      }
+    }
+  }
+
+  /**
+   * Utility method that tries to generate a unique constraint name based on the
+   * parameters passed to the method.
+   * @param parameters: Properties of the constraint that hopefully makes it unique.
+   * @throws AnalysisException
+   */
+  private String generateConstraintName(String... parameters) throws AnalysisException {
+    int hashcode = ArrayUtils.toString(parameters).hashCode() & 0xfffffff;
+    int counter = 0;
+    final int MAX_RETRIES = 10;
+    while (counter < MAX_RETRIES) {
+      String currName = (parameters.length == 0 ? "constraint_" :
+          parameters[parameters.length-1]) + "_" + hashcode + "_" +
+          System.currentTimeMillis() + "_" + (counter++);
+      // TODO: Possible collisions? HMS doesn't have an API to get all existing
+      //  contraint names.
+      return currName;
+    }
+    throw new AnalysisException("Error while trying to " +
+            "generate the constraint name for " + ArrayUtils.toString(parameters));
   }
 
   /**

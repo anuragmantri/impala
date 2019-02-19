@@ -24,6 +24,8 @@ import java.util.Map;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaParseException;
 import org.apache.impala.authorization.AuthorizationConfig;
+import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
+import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.impala.catalog.KuduTable;
 import org.apache.impala.catalog.RowFormat;
 import org.apache.impala.common.AnalysisException;
@@ -103,6 +105,8 @@ public class CreateTableStmt extends StatementBase {
   public List<ColumnDef> getPrimaryKeyColumnDefs() {
     return tableDef_.getPrimaryKeyColumnDefs();
   }
+  public List<SQLPrimaryKey> getPrimaryKeys() { return tableDef_.getPrimaryKeys(); }
+  public List<SQLForeignKey> getForeignKeys() { return tableDef_.getForeignKeys(); }
   public boolean isExternal() { return tableDef_.isExternal(); }
   public List<ColumnDef> getPartitionColumnDefs() {
     return tableDef_.getPartitionColumnDefs();
@@ -184,6 +188,12 @@ public class CreateTableStmt extends StatementBase {
     for (ColumnDef pkColDef: getPrimaryKeyColumnDefs()) {
       params.addToPrimary_key_column_names(pkColDef.getColName());
     }
+    for(SQLPrimaryKey pk: getPrimaryKeys()){
+      params.addToPrimary_keys(pk);
+    }
+    for(SQLForeignKey fk: getForeignKeys()){
+      params.addToForeign_keys(fk);
+    }
     params.setServer_name(serverName_);
     return params;
   }
@@ -191,6 +201,11 @@ public class CreateTableStmt extends StatementBase {
   @Override
   public void collectTableRefs(List<TableRef> tblRefs) {
     tblRefs.add(new TableRef(tableDef_.getTblName().toPath(), null));
+    // When foreign keys are specified, we need to add all the tables the foreign keys are
+    // referring to.
+    for(TableDef.ForeignKey fk: tableDef_.getForeignKeysList()){
+      tblRefs.add(new TableRef(fk.pkTableName.toPath(), null));
+    }
   }
 
   @Override
@@ -245,9 +260,6 @@ public class CreateTableStmt extends StatementBase {
       }
       AnalysisUtils.throwIfNotEmpty(getKuduPartitionParams(),
           "Only Kudu tables can use the PARTITION BY clause.");
-      if (hasPrimaryKey()) {
-        throw new AnalysisException("Only Kudu tables can specify a PRIMARY KEY.");
-      }
       return;
     }
 

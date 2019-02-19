@@ -2350,6 +2350,26 @@ public class AnalyzeDDLTest extends FrontendTestBase {
     AnalyzesOk("create table functional.new_table (c char(250))");
     AnalyzesOk("create table new_table (i int) PARTITIONED BY (c char(3))");
 
+    // Primary key and foreign key specification.
+    AnalyzesOk("create table foo(id int, year int, primary key (id))");
+    AnalyzesOk("create table foo(id int, year int, primary key (id, year))");
+    AnalyzesOk("create table foo(id int, year int, primary key (id, year) disable "
+        + "novalidate rely)");
+    AnalyzesOk("create table fk(id int, year int, primary key (id, year) disable "
+        + "novalidate rely, foreign key(id) REFERENCES pk(id) DISABLE NOVALIDATE RELY)");
+    AnalyzesOk("create table foo(id int, year int, foreign key (id) references "
+        + "pk(id) disable novalidate rely)");
+    AnalyzesOk("create table foo(id int, year int, foreign key (id) references "
+        + "pk(id))");
+    AnalysisError("create table foo(id int, year int, primary key (id, year) enable"
+        + " novalidate rely)", "ENABLE feature is not supported yet.");
+    AnalysisError("create table foo(id int, year int, primary key (id, year) disable"
+        + " validate rely)", "VALIDATE feature is not supported yet.");
+    AnalysisError("create table foo(id int, year int, foreign key (id) references "
+        + "pk(id) enable novalidate rely)", "ENABLE feature is not supported yet.");
+    AnalysisError("create table foo(id int, year int, foreign key (id) references "
+        + "pk(id) disable validate rely)", "VALIDATE feature is not supported yet.");
+
     {
       // Check that long_properties fail at the analysis layer
       String long_property_key = "";
@@ -2414,8 +2434,6 @@ public class AnalyzeDDLTest extends FrontendTestBase {
       AnalysisError(String.format("create table t (i int primary key) stored as %s",
           format), String.format("Unsupported column options for file format " +
               "'%s': 'i INT PRIMARY KEY'", fileFormatsStr[formatIndx]));
-      AnalysisError(String.format("create table t (i int, primary key(i)) stored as %s",
-          format), "Only Kudu tables can specify a PRIMARY KEY");
       formatIndx++;
     }
 
