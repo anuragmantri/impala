@@ -3868,37 +3868,56 @@ public class CatalogOpExecutor {
       List<FeFsPartition> affectedExistingPartitions, boolean isInsertOverwrite) {
     if (!catalog_.isExternalEventProcessingEnabled() ||
         affectedExistingPartitions.size() == 0) return;
-    // Map of partition ids to file names of all existing partitions touched by the
+
+    Map<String, FeFsPartition> affectedExistingPartitionNamesMap =
+        getPartitionNamesMap(affectedExistingPartitions);
+    // Map of partition names to file names of all existing partitions touched by the
     // insert.
-    Map<Long, Set<String>> partitionFilesMap = new HashMap<>();
+    Map<String, Set<String>> partitionFilesMapBeforeInsert = new HashMap<>();
     if (!isInsertOverwrite) {
-      for (FeFsPartition partition : affectedExistingPartitions) {
-        partitionFilesMap.put(partition.getId(),
-            ((HdfsPartition) partition).getFileNames());
-      }
+      partitionFilesMapBeforeInsert =
+          getPartitionNameFilesMap(affectedExistingPartitions);
     }
     // If table is partitioned, we add all existing partitions touched by this insert
-    // to the insert event. If it is not an insert overwrite operation, we find new
-    // files added by this insert.
+    // to the insert event.
     Collection<? extends FeFsPartition> partsPostInsert;
-    partsPostInsert = table.getNumClusteringCols() > 0 ?
-        ((FeFsTable)table).loadPartitions(partitionFilesMap.keySet()) :
-            FeCatalogUtils.loadAllPartitions((HdfsTable) table);
-    for (FeFsPartition part : partsPostInsert) {
+    partsPostInsert = FeCatalogUtils.loadAllPartitions((HdfsTable) table);
+
+    Map<String, FeFsPartition> partitionNamesMapPostInsert =
+        getPartitionNamesMap(partsPostInsert);
+
+    // New partitions created by this insert don't need an insert event as ALTER events
+    // take care of these. Hence, we remove new partitions from the map.
+    Set<String> newPartitionNames = Sets.difference(partitionNamesMapPostInsert.keySet(),
+        affectedExistingPartitionNamesMap.keySet());
+
+    for (String partName : newPartitionNames) {
+      partitionNamesMapPostInsert.remove(partName);
+    }
+    // If it is not an insert overwrite operation, we find new files added by this insert.
+    Map<String, Set<String>> partitionFilesMapPostInsert = new HashMap<>();
+    if (!isInsertOverwrite) {
+      partitionFilesMapPostInsert =
+          getPartitionNameFilesMap(partitionNamesMapPostInsert.values());
+    }
+
+    for (FeFsPartition part : partitionNamesMapPostInsert.values()) {
       // Find the delta of the files added by the insert if it is not an overwrite
       // operation. HMS fireListenerEvent() expects an empty list if no new files are
       // added or if the operation is an insert overwrite.
       Set<String> deltaFiles = new HashSet<>();
       List<String> partVals = null;
       if (!isInsertOverwrite) {
-        Set<String> filesPostInsert = ((HdfsPartition) part).getFileNames();
+        Set<String> filesPostInsert =
+            partitionFilesMapPostInsert.get(part.getPartitionName());
         if (table.getNumClusteringCols() > 0) {
-          Set<String> filesBeforeInsert = partitionFilesMap.get(part.getId());
+          Set<String> filesBeforeInsert =
+              partitionFilesMapBeforeInsert.get(part.getPartitionName());
           deltaFiles = Sets.difference(filesBeforeInsert, filesPostInsert);
           partVals = part.getPartitionValuesAsStrings(true);
         } else {
-          Map.Entry<Long, Set<String>> entry =
-              partitionFilesMap.entrySet().iterator().next();
+          Map.Entry<String, Set<String>> entry =
+              partitionFilesMapBeforeInsert.entrySet().iterator().next();
           deltaFiles = Sets.difference(entry.getValue(), filesPostInsert);
         }
         LOG.info("{} new files detected for table {} partition {}.",
@@ -3919,6 +3938,31 @@ public class CatalogOpExecutor {
             + "generating INSERT event.");
       }
     }
+  }
+
+  /**
+   * Util method that returns a map of partition names to it's FeFsPartition object.
+   */
+  private Map<String, FeFsPartition> getPartitionNamesMap(Collection<?
+      extends FeFsPartition> partitions) {
+    Map<String, FeFsPartition> partitionNameMap = new HashMap<>();
+    for (FeFsPartition part: partitions) {
+      partitionNameMap.put(part.getPartitionName(), part);
+    }
+    return partitionNameMap;
+  }
+
+  /**
+   * Util method to return a map of partition names to list of files for that partition.
+   */
+  private Map<String, Set<String>> getPartitionNameFilesMap(Collection<?
+      extends FeFsPartition> partitions) {
+    Map<String, Set<String>> partitionFilesMap = new HashMap<>();
+    for (FeFsPartition partition : partitions) {
+      partitionFilesMap.put(partition.getPartitionName(),
+          ((HdfsPartition) partition).getFileNames());
+    }
+    return partitionFilesMap;
   }
 
   /**
