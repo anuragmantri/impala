@@ -43,7 +43,11 @@ import org.apache.hadoop.hive.common.ValidWriteIdList;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.metastore.api.ForeignKeysRequest;
 import org.apache.hadoop.hive.metastore.api.Partition;
+import org.apache.hadoop.hive.metastore.api.PrimaryKeysRequest;
+import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
+import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.serde.serdeConstants;
 import org.apache.impala.analysis.Expr;
@@ -225,6 +229,10 @@ public class HdfsTable extends Table implements FeFsTable {
   // Flag to check if the table schema has been loaded. Used as a precondition
   // for setAvroSchema().
   private boolean isSchemaLoaded_ = false;
+
+  //Primary Key and Foreign Key information
+  private List<SQLPrimaryKey> primaryKeys_;
+  private List<SQLForeignKey> foreignKeys_;
 
   // Represents a set of storage-related statistics aggregated at the table or partition
   // level.
@@ -947,6 +955,12 @@ public class HdfsTable extends Table implements FeFsTable {
             loadAllColumnStats(client);
         }
         loadValidWriteIdList(client);
+        //Get Primary Key Info
+        primaryKeys_ =  client.getPrimaryKeys(new PrimaryKeysRequest(msTbl.getDbName(),
+            msTbl.getTableName()));
+        // Get foreign key info
+        foreignKeys_ = client.getForeignKeys(new ForeignKeysRequest(null,null,
+            msTbl.getDbName(),msTbl.getTableName()));
 
         // Load partition and file metadata
         if (reuseMetadata) {
@@ -1372,6 +1386,8 @@ public class HdfsTable extends Table implements FeFsTable {
     nullColumnValue_ = hdfsTable.nullColumnValue;
     nullPartitionKeyValue_ = hdfsTable.nullPartitionKeyValue;
     hostIndex_.populate(hdfsTable.getNetwork_addresses());
+    primaryKeys_=getPrimaryKeys();
+    foreignKeys_ = getForeignKeys();
     resetPartitions();
     try {
       for (Map.Entry<Long, THdfsPartition> part: hdfsTable.getPartitions().entrySet()) {
@@ -1532,6 +1548,7 @@ public class HdfsTable extends Table implements FeFsTable {
     THdfsTable hdfsTable = new THdfsTable(hdfsBaseDir_, getColumnNames(),
         nullPartitionKeyValue_, nullColumnValue_, idToPartition, prototypePartition);
     hdfsTable.setAvroSchema(avroSchema_);
+    
     if (type == ThriftObjectType.FULL) {
       // Network addresses are used only by THdfsFileBlocks which are inside
       // THdfsFileDesc, so include network addreses only when including THdfsFileDesc.
@@ -1557,6 +1574,13 @@ public class HdfsTable extends Table implements FeFsTable {
 
   @Override // FeFsTable
   public ListMap<TNetworkAddress> getHostIndex() { return hostIndex_; }
+
+  @Override
+  public List<SQLPrimaryKey> getPrimaryKeys() { return primaryKeys_; }
+
+  @Override
+  public List<SQLForeignKey> getForeignKeys() { return foreignKeys_; }
+
 
   /**
    * Returns the set of file formats that the partitions are stored in.
