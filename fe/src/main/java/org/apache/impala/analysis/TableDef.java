@@ -25,9 +25,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
-import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
 import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
@@ -254,7 +254,7 @@ class TableDef {
     final List<String> forignKeyColNames;
 
     //Name of fk
-    final String fkConstrintName;
+    final String fkConstraintName;
 
     //Constraints
     final boolean relyCstr;
@@ -270,7 +270,35 @@ class TableDef {
       this.relyCstr = relyCstr;
       this.validateCstr = validateCstr;
       this.enableCstr = enableCstr;
-      this.fkConstrintName = fkName;
+      this.fkConstraintName = fkName;
+    }
+
+    public TableName getPkTableName() {
+      return pkTableName;
+    }
+
+    public List<String> getPrimaryKeyColNames() {
+      return primaryKeyColNames;
+    }
+
+    public List<String> getForignKeyColNames() {
+      return forignKeyColNames;
+    }
+
+    public String getFkConstraintName() {
+      return fkConstraintName;
+    }
+
+    public boolean isRelyCstr() {
+      return relyCstr;
+    }
+
+    public boolean isValidateCstr() {
+      return validateCstr;
+    }
+
+    public boolean isEnableCstr() {
+      return enableCstr;
     }
   }
 
@@ -451,14 +479,14 @@ class TableDef {
       }
 
       // We do not support enable and validate for primary keys.
-      if(primaryKey_.enableCstr){
+      if(primaryKey_.isEnableCstr()){
         throw new AnalysisException("ENABLE feature is not supported yet.");
       }
-      if(primaryKey_.validateCstr){
+      if(primaryKey_.isValidateCstr()){
         throw new AnalysisException("VALIDATE feature is not supported yet.");
       }
       primaryKeyColDefs_.add(colDef);
-      String constraintName = generateConstraintName(getTblName().getDb(), getTbl(), "pk");
+      String constraintName = generateConstraintName();
       primaryKeys_.add(new SQLPrimaryKey(getTblName().getDb(), getTbl(),
               colDef.getColName(), cnt++, constraintName, primaryKey_.enableCstr,
               primaryKey_.validateCstr, primaryKey_.relyCstr));
@@ -468,85 +496,74 @@ class TableDef {
   private void analyzeForeignKeys(Analyzer analyzer) throws AnalysisException {
     if(getForeignKeysList().size() == 0 || getForeignKeysList() == null) return;
     for(ForeignKey fk: getForeignKeysList() ){
-      // Foreign Key and Primarry Key columns don't match.
-      if(fk.forignKeyColNames.size() != fk.primaryKeyColNames.size()){
+      // Foreign Key and Primary Key columns don't match.
+      if(fk.getForignKeyColNames().size() != fk.getPrimaryKeyColNames().size()){
         throw new AnalysisException("The number of foreign key columns should be same" +
             "as the number of parent key columns.");
       }
-      String parentDb = fk.pkTableName.getDb();
-      if(parentDb == null) parentDb = analyzer.getDefaultDb();
+      String parentDb = fk.getPkTableName().getDb();
+      if(parentDb == null) {
+        parentDb = analyzer.getDefaultDb();
+      }
       //Check if parent table exits
-      if(!analyzer.dbContainsTable(parentDb, fk.pkTableName.getTbl(),
+      if(!analyzer.dbContainsTable(parentDb, fk.getPkTableName().getTbl(),
           Privilege.VIEW_METADATA )){
         throw new AnalysisException("Parent table not found:"
-            + analyzer.getFqTableName(fk.pkTableName));
+            + analyzer.getFqTableName(fk.getPkTableName()));
       }
 
       // We do not support ENABLE and VALIDATE.
-      if(fk.enableCstr){
+      if(fk.isEnableCstr()){
         throw new AnalysisException("ENABLE feature is not supported yet.");
       }
 
-      if(fk.validateCstr){
+      if(fk.isValidateCstr()){
         throw new AnalysisException("VALIDATE feature is not supported yet.");
       }
 
       //Check for primary key cols in parent table
-      FeTable parent_table = analyzer.getTable(fk.pkTableName, Privilege.VIEW_METADATA);
+      FeTable parentTable = analyzer.getTable(fk.getPkTableName(), Privilege.VIEW_METADATA);
 
 
-      for(String pkCol : fk.primaryKeyColNames){
-        if(!parent_table.getColumnNames().contains(pkCol.toLowerCase())){
+      for(String pkCol : fk.getPrimaryKeyColNames()){
+        if(!parentTable.getColumnNames().contains(pkCol.toLowerCase())){
           throw new AnalysisException("Parent column not found: " + pkCol.toLowerCase());
         }
       }
+      // TODO: Check column types of parent table and child tables match. Currently HMS
+      //  API fails if they don't, it's good to fail early during analysis here.
       String constraintName = null;
-      for(int i = 0; i<fk.forignKeyColNames.size(); i++){
-        if(fk.fkConstrintName == null){
+      for(int i = 0; i<fk.getForignKeyColNames().size(); i++){
+        if(fk.getFkConstraintName() == null){
           if(i == 0){
-            constraintName = generateConstraintName(getTblName().getDb(), getTbl(),
-                parentDb,fk.pkTableName.getTbl(),fk.forignKeyColNames.get(i).
-                toLowerCase(), fk.primaryKeyColNames.get(i).toLowerCase(), "fk");
+            constraintName = generateConstraintName();
           }
         }
         else{
-          constraintName = fk.fkConstrintName;
+          constraintName = fk.getFkConstraintName();
         }
         SQLForeignKey sqlForeignKey = new SQLForeignKey();
         sqlForeignKey.setPktable_db(parentDb);
-        sqlForeignKey.setPktable_name(fk.pkTableName.getTbl());
+        sqlForeignKey.setPktable_name(fk.getPkTableName().getTbl());
         sqlForeignKey.setFktable_db(getTblName().getDb());
         sqlForeignKey.setFktable_name(getTbl());
-        sqlForeignKey.setPkcolumn_name(fk.primaryKeyColNames.get(i).toLowerCase());
+        sqlForeignKey.setPkcolumn_name(fk.getPrimaryKeyColNames().get(i).toLowerCase());
         sqlForeignKey.setFk_name(constraintName);
         sqlForeignKey.setKey_seq(i+1);
-        sqlForeignKey.setFkcolumn_name(fk.forignKeyColNames.get(i).toLowerCase());
-        sqlForeignKey.setRely_cstr(fk.relyCstr);
-        getForeignKeys().add( sqlForeignKey );
+        sqlForeignKey.setFkcolumn_name(fk.getForignKeyColNames().get(i).toLowerCase());
+        sqlForeignKey.setRely_cstr(fk.isRelyCstr());
+        getForeignKeys().add(sqlForeignKey);
       }
     }
   }
 
   /**
-   * Utility method that tries to generate a unique constraint name based on the
-   * parameters passed to the method.
-   * @param parameters: Properties of the constraint that hopefully makes it unique.
-   * @throws AnalysisException
+   * Utility method to generate a unique constraint name when user does not specify one.
+   * TODO: Collisions possible? HMS doesn't have an API to query existing constraint
+   * names.
    */
-  private String generateConstraintName(String... parameters) throws AnalysisException {
-    int hashcode = ArrayUtils.toString(parameters).hashCode() & 0xfffffff;
-    int counter = 0;
-    final int MAX_RETRIES = 10;
-    while (counter < MAX_RETRIES) {
-      String currName = (parameters.length == 0 ? "constraint_" :
-          parameters[parameters.length-1]) + "_" + hashcode + "_" +
-          System.currentTimeMillis() + "_" + (counter++);
-      // TODO: Possible collisions? HMS doesn't have an API to get all existing
-      //  contraint names.
-      return currName;
-    }
-    throw new AnalysisException("Error while trying to " +
-            "generate the constraint name for " + ArrayUtils.toString(parameters));
+  private String generateConstraintName() {
+    return UUID.randomUUID().toString();
   }
 
   /**

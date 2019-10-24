@@ -208,7 +208,7 @@ public class CreateTableStmt extends StatementBase {
     // When foreign keys are specified, we need to add all the tables the foreign keys are
     // referring to.
     for(TableDef.ForeignKey fk: tableDef_.getForeignKeysList()){
-      tblRefs.add(new TableRef(fk.pkTableName.toPath(), null));
+      tblRefs.add(new TableRef(fk.getPkTableName().toPath(), null));
     }
   }
 
