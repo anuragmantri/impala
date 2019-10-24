@@ -137,6 +137,10 @@ public class CreateTableStmt extends StatementBase {
     return tableDef_.getPrimaryKeyColumnNames();
   }
 
+  List<TableDef.ForeignKey> getForeignKeysList() {
+    return tableDef_.getForeignKeysList();
+  }
+
   /**
    * Can only be called after analysis, returns the owner of this table (the user from
    * the current session).

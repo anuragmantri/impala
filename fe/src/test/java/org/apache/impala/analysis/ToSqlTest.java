@@ -365,6 +365,23 @@ public class ToSqlTest extends FrontendTestBase {
         "'storage_handler'='org.apache.hadoop.hive.kudu.KuduStorageHandler')",
         kuduMasters),
         true);
+    //TODO change this to include constraints.
+    testToSql("create table pk(id int, year string, primary key (id, year) disable"
+        + " novalidate rely)", "default", "CREATE TABLE "
+        + "default.pk ( id INT, year STRING, PRIMARY KEY (id, year) ) STORED AS TEXTFILE",
+        true);
+
+    testToSql("create table default.pk(id int)", "default", "CREATE TABLE "
+        + "default.pk ( id INT ) STORED AS TEXTFILE", true);
+
+    testToSql("create table default.pk2(id string)", "default", "CREATE TABLE "
+        + "default.pk2 ( id STRING ) STORED AS TEXTFILE", true);
+
+    testToSql("create table default.fk(id int, year string, FOREIGN KEY (id) REFERENCES "
+        + "default.pk(id) DISABLE NOVALIDATE RELY, FOREIGN KEY (year) REFERENCES  "
+        + "default.pk2(year) DISABLE NOVALIDATE RELY)", "CREATE TABLE"
+        + "default.fk ( id INT, year STRING, FOREIGN KEY (id) REFERENCES pk(id), "
+        + "FOREIGN KEY (year) REFERENCES pk2(year) STORED AS TEXTFILE");
   }
 
   @Test

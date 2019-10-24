@@ -211,6 +211,30 @@ class TableDef {
       this.validateCstr = validateCstr;
       this.enableCstr = enableCstr;
     }
+
+    public TableName getPkTableName() {
+      return pkTableName;
+    }
+
+    public List<String> getPrimaryKeyColNames() {
+      return primaryKeyColNames;
+    }
+
+    public String getPkConstraintName() {
+      return pkConstraintName;
+    }
+
+    public boolean isRelyCstr() {
+      return relyCstr;
+    }
+
+    public boolean isValidateCstr() {
+      return validateCstr;
+    }
+
+    public boolean isEnableCstr() {
+      return enableCstr;
+    }
   }
 
 
@@ -251,7 +275,8 @@ class TableDef {
   }
 
   //Only one primary key definition is supported.
-  private PrimaryKey primaryKey;
+  private PrimaryKey primaryKey_;
+
   // Multiple foreign keys are supported.
   private List<ForeignKey> foreignKeysList_ = new ArrayList<>();
 
@@ -284,8 +309,8 @@ class TableDef {
     return columnDefs_.stream().map(col -> col.getType()).collect(Collectors.toList());
   }
 
-  public void setPrimaryKey(TableDef.PrimaryKey primaryKey) {
-    this.primaryKey = primaryKey;
+  public void setPrimaryKey(TableDef.PrimaryKey primaryKey_) {
+    this.primaryKey_ = primaryKey_;
   }
   List<String> getPartitionColumnNames() {
     return ColumnDef.toColumnNames(getPartitionColumnDefs());
@@ -395,11 +420,11 @@ class TableDef {
     }
 
     if (primaryKeyColNames_.isEmpty()) {
-      if(primaryKey == null || primaryKey.primaryKeyColNames.isEmpty()){
+      if(primaryKey_ == null || primaryKey_.getPrimaryKeyColNames().isEmpty()){
         return;
       }
       else {
-        getPrimaryKeyColumnNames().addAll(primaryKey.primaryKeyColNames);
+        getPrimaryKeyColumnNames().addAll(primaryKey_.getPrimaryKeyColNames());
       }
     }
 
@@ -426,17 +451,17 @@ class TableDef {
       }
 
       // We do not support enable and validate for primary keys.
-      if(primaryKey.enableCstr){
+      if(primaryKey_.enableCstr){
         throw new AnalysisException("ENABLE feature is not supported yet.");
       }
-      if(primaryKey.validateCstr){
+      if(primaryKey_.validateCstr){
         throw new AnalysisException("VALIDATE feature is not supported yet.");
       }
       primaryKeyColDefs_.add(colDef);
       String constraintName = generateConstraintName(getTblName().getDb(), getTbl(), "pk");
       primaryKeys_.add(new SQLPrimaryKey(getTblName().getDb(), getTbl(),
-              colDef.getColName(), cnt++, constraintName, primaryKey.enableCstr,
-              primaryKey.validateCstr,primaryKey.relyCstr));
+              colDef.getColName(), cnt++, constraintName, primaryKey_.enableCstr,
+              primaryKey_.validateCstr, primaryKey_.relyCstr));
     }
   }
 

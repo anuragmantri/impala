@@ -28,6 +28,7 @@ import org.antlr.runtime.ANTLRStringStream;
 import org.antlr.runtime.Token;
 import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.hadoop.fs.Hdfs;
 import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.ql.parse.HiveLexer;
@@ -41,6 +42,7 @@ import org.apache.impala.catalog.FeView;
 import org.apache.impala.catalog.Function;
 import org.apache.impala.catalog.HdfsCompression;
 import org.apache.impala.catalog.HdfsFileFormat;
+import org.apache.impala.catalog.HdfsTable;
 import org.apache.impala.catalog.KuduColumn;
 import org.apache.impala.catalog.KuduTable;
 import org.apache.impala.catalog.RowFormat;
@@ -252,9 +254,9 @@ public class ToSqlUtils {
     String kuduParamsSql = getKuduPartitionByParams(stmt);
     // TODO: Pass the correct compression, if applicable.
     return getCreateTableSql(stmt.getDb(), stmt.getTbl(), stmt.getComment(), colsSql,
-        partitionColsSql, stmt.getTblPrimaryKeyColumnNames(), kuduParamsSql,
-        new Pair<>(stmt.getSortColumns(), stmt.getSortingOrder()), properties,
-        stmt.getSerdeProperties(), stmt.isExternal(), stmt.getIfNotExists(),
+        partitionColsSql, stmt.getTblPrimaryKeyColumnNames(), stmt.getForeignKeysList()
+        , kuduParamsSql, new Pair<>(stmt.getSortColumns(), stmt.getSortingOrder()),
+        properties, stmt.getSerdeProperties(), stmt.isExternal(), stmt.getIfNotExists(),
         stmt.getRowFormat(), HdfsFileFormat.fromThrift(stmt.getFileFormat()),
         HdfsCompression.NONE, null, stmt.getLocation());
   }
@@ -287,10 +289,10 @@ public class ToSqlUtils {
     // TODO: Pass the correct compression, if applicable.
     String createTableSql = getCreateTableSql(innerStmt.getDb(), innerStmt.getTbl(),
         innerStmt.getComment(), null, partitionColsSql,
-        innerStmt.getTblPrimaryKeyColumnNames(), kuduParamsSql,
-        new Pair<>(innerStmt.getSortColumns(), innerStmt.getSortingOrder()),
-        properties, innerStmt.getSerdeProperties(), innerStmt.isExternal(),
-        innerStmt.getIfNotExists(), innerStmt.getRowFormat(),
+        innerStmt.getTblPrimaryKeyColumnNames(), innerStmt.getForeignKeysList(),
+        kuduParamsSql, new Pair<>(innerStmt.getSortColumns(),
+        innerStmt.getSortingOrder()), properties, innerStmt.getSerdeProperties(),
+        innerStmt.isExternal(), innerStmt.getIfNotExists(), innerStmt.getRowFormat(),
         HdfsFileFormat.fromThrift(innerStmt.getFileFormat()), HdfsCompression.NONE, null,
         innerStmt.getLocation());
     return createTableSql + " AS " + stmt.getQueryStmt().toSql(options);
@@ -333,6 +335,7 @@ public class ToSqlUtils {
 
     String storageHandlerClassName = table.getStorageHandlerClassName();
     List<String> primaryKeySql = new ArrayList<>();
+    List<TableDef.ForeignKey> foreignKeySql = new ArrayList<>();
     String kuduPartitionByParams = null;
     if (table instanceof FeKuduTable) {
       FeKuduTable kuduTable = (FeKuduTable) table;
@@ -373,10 +376,10 @@ public class ToSqlUtils {
     }
     HdfsUri tableLocation = location == null ? null : new HdfsUri(location);
     return getCreateTableSql(table.getDb().getName(), table.getName(), comment, colsSql,
-        partitionColsSql, primaryKeySql, kuduPartitionByParams,
+        partitionColsSql, primaryKeySql, foreignKeySql, kuduPartitionByParams,
         new Pair<>(sortColsSql, sortingOrder), properties, serdeParameters,
-        isExternal, false, rowFormat, format, compression, storageHandlerClassName,
-        tableLocation);
+        isExternal, false, rowFormat, format, compression,
+        storageHandlerClassName, tableLocation);
   }
 
   /**
@@ -386,8 +389,8 @@ public class ToSqlUtils {
    */
   public static String getCreateTableSql(String dbName, String tableName,
       String tableComment, List<String> columnsSql, List<String> partitionColumnsSql,
-      List<String> primaryKeysSql, String kuduPartitionByParams,
-      Pair<List<String>, TSortingOrder> sortProperties,
+      List<String> primaryKeysSql, List<TableDef.ForeignKey> foreignKeysList,
+      String kuduPartitionByParams, Pair<List<String>, TSortingOrder> sortProperties,
       Map<String, String> tblProperties, Map<String, String> serdeParameters,
       boolean isExternal, boolean ifNotExists, RowFormat rowFormat,
       HdfsFileFormat fileFormat, HdfsCompression compression,
@@ -405,6 +408,16 @@ public class ToSqlUtils {
       if (primaryKeysSql != null && !primaryKeysSql.isEmpty()) {
         sb.append(",\n  PRIMARY KEY (");
         Joiner.on(", ").appendTo(sb, primaryKeysSql).append(")");
+      }
+      if (foreignKeysList != null && !foreignKeysList.isEmpty()) {
+        for (TableDef.ForeignKey fk : foreignKeysList) {
+          for (int i = 0; i < fk.forignKeyColNames.size(); i++) {
+            sb.append(",\n FOREIGN KEY(");
+            sb.append(fk.forignKeyColNames.get(i)).append(" REFERENCES ");
+            sb.append(fk.pkTableName + "(").append(fk.primaryKeyColNames.get(i)).
+                append(")");
+          }
+        }
       }
       sb.append("\n)");
     } else {
