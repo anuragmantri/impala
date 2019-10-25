@@ -230,7 +230,7 @@ public class HdfsTable extends Table implements FeFsTable {
   // for setAvroSchema().
   private boolean isSchemaLoaded_ = false;
 
-  //Primary Key and Foreign Key information
+  //Primary Key and Foreign Key information. Set in load() method.
   private List<SQLPrimaryKey> primaryKeys_;
   private List<SQLForeignKey> foreignKeys_;
 
@@ -955,10 +955,10 @@ public class HdfsTable extends Table implements FeFsTable {
             loadAllColumnStats(client);
         }
         loadValidWriteIdList(client);
-        //Get Primary Key Info
+        //Get Primary keys info.
         primaryKeys_ =  client.getPrimaryKeys(new PrimaryKeysRequest(msTbl.getDbName(),
             msTbl.getTableName()));
-        // Get foreign key info
+        // Get foreign keys info.
         foreignKeys_ = client.getForeignKeys(new ForeignKeysRequest(null,null,
             msTbl.getDbName(),msTbl.getTableName()));
 
@@ -1386,8 +1386,8 @@ public class HdfsTable extends Table implements FeFsTable {
     nullColumnValue_ = hdfsTable.nullColumnValue;
     nullPartitionKeyValue_ = hdfsTable.nullPartitionKeyValue;
     hostIndex_.populate(hdfsTable.getNetwork_addresses());
-    primaryKeys_=getPrimaryKeys();
-    foreignKeys_ = getForeignKeys();
+    primaryKeys_= hdfsTable.getPrimary_keys();
+    foreignKeys_ = hdfsTable.getForeign_keys();
     resetPartitions();
     try {
       for (Map.Entry<Long, THdfsPartition> part: hdfsTable.getPartitions().entrySet()) {
@@ -1548,6 +1548,8 @@ public class HdfsTable extends Table implements FeFsTable {
     THdfsTable hdfsTable = new THdfsTable(hdfsBaseDir_, getColumnNames(),
         nullPartitionKeyValue_, nullColumnValue_, idToPartition, prototypePartition);
     hdfsTable.setAvroSchema(avroSchema_);
+    hdfsTable.setPrimary_keys(primaryKeys_);
+    hdfsTable.setForeign_keys(foreignKeys_);
     
     if (type == ThriftObjectType.FULL) {
       // Network addresses are used only by THdfsFileBlocks which are inside
@@ -1580,6 +1582,17 @@ public class HdfsTable extends Table implements FeFsTable {
 
   @Override
   public List<SQLForeignKey> getForeignKeys() { return foreignKeys_; }
+
+  /**
+   * Get primary keys column names, useful for toSqlUtils.
+   */
+  public List<String> getPrimaryKeysSql() {
+    List<String> primaryKeyColNames = new ArrayList<>();
+    if (getPrimaryKeys() != null && !getPrimaryKeys().isEmpty()) {
+      getPrimaryKeys().stream().forEach(p -> primaryKeyColNames.add(p.getColumn_name()));
+    }
+    return primaryKeyColNames;
+  }
 
 
   /**

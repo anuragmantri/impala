@@ -28,9 +28,9 @@ import org.antlr.runtime.ANTLRStringStream;
 import org.antlr.runtime.Token;
 import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringEscapeUtils;
-import org.apache.hadoop.fs.Hdfs;
 import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.metastore.TableType;
+import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
 import org.apache.hadoop.hive.ql.parse.HiveLexer;
 import org.apache.impala.catalog.CatalogException;
 import org.apache.impala.catalog.Column;
@@ -373,6 +373,9 @@ public class ToSqlUtils {
       String inputFormat = msTable.getSd().getInputFormat();
       format = HdfsFileFormat.fromHdfsInputFormatClass(inputFormat);
       compression = HdfsCompression.fromHdfsInputFormatClass(inputFormat);
+      if (table instanceof HdfsTable) {
+        primaryKeySql = ((HdfsTable) table).getPrimaryKeysSql();
+      }
     }
     HdfsUri tableLocation = location == null ? null : new HdfsUri(location);
     return getCreateTableSql(table.getDb().getName(), table.getName(), comment, colsSql,
@@ -410,14 +413,7 @@ public class ToSqlUtils {
         Joiner.on(", ").appendTo(sb, primaryKeysSql).append(")");
       }
       if (foreignKeysList != null && !foreignKeysList.isEmpty()) {
-        for (TableDef.ForeignKey fk : foreignKeysList) {
-          for (int i = 0; i < fk.forignKeyColNames.size(); i++) {
-            sb.append(",\n FOREIGN KEY(");
-            sb.append(fk.forignKeyColNames.get(i)).append(" REFERENCES ");
-            sb.append(fk.pkTableName + "(").append(fk.primaryKeyColNames.get(i)).
-                append(")");
-          }
-        }
+
       }
       sb.append("\n)");
     } else {
