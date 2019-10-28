@@ -17,6 +17,7 @@
 
 package org.apache.impala.analysis;
 
+import com.google.common.base.Joiner;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -137,8 +138,23 @@ public class CreateTableStmt extends StatementBase {
     return tableDef_.getPrimaryKeyColumnNames();
   }
 
-  List<TableDef.ForeignKey> getForeignKeysList() {
-    return tableDef_.getForeignKeysList();
+  /**
+   * Get foreign keys information as strings. Useful for toSqlUtils.
+   * @return List of strings of the form "(col1, col2,..) REFERENCES [pk_db].pk_table
+   * (colA, colB,..)".
+   */
+  List<String> getForeignKeysSql() {
+    List<TableDef.ForeignKey> fkList = tableDef_.getForeignKeysList();
+    List<String> foreignKeysSql = new ArrayList<>();
+    StringBuilder sb = new StringBuilder("(");
+    for (TableDef.ForeignKey fk : fkList) {
+      Joiner.on(", ").appendTo(sb, fk.getForignKeyColNames()).append(")");
+      sb.append(" REFERENCES ");
+      sb.append(fk.getPkTableName() + "(");
+      Joiner.on(", ").appendTo(sb, fk.getPrimaryKeyColNames()).append(")");
+      foreignKeysSql.add(sb.toString());
+    }
+    return foreignKeysSql;
   }
 
   /**

@@ -30,7 +30,6 @@ import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.hadoop.hive.common.StatsSetupConst;
 import org.apache.hadoop.hive.metastore.TableType;
-import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
 import org.apache.hadoop.hive.ql.parse.HiveLexer;
 import org.apache.impala.catalog.CatalogException;
 import org.apache.impala.catalog.Column;
@@ -254,7 +253,7 @@ public class ToSqlUtils {
     String kuduParamsSql = getKuduPartitionByParams(stmt);
     // TODO: Pass the correct compression, if applicable.
     return getCreateTableSql(stmt.getDb(), stmt.getTbl(), stmt.getComment(), colsSql,
-        partitionColsSql, stmt.getTblPrimaryKeyColumnNames(), stmt.getForeignKeysList()
+        partitionColsSql, stmt.getTblPrimaryKeyColumnNames(), stmt.getForeignKeysSql()
         , kuduParamsSql, new Pair<>(stmt.getSortColumns(), stmt.getSortingOrder()),
         properties, stmt.getSerdeProperties(), stmt.isExternal(), stmt.getIfNotExists(),
         stmt.getRowFormat(), HdfsFileFormat.fromThrift(stmt.getFileFormat()),
@@ -289,7 +288,7 @@ public class ToSqlUtils {
     // TODO: Pass the correct compression, if applicable.
     String createTableSql = getCreateTableSql(innerStmt.getDb(), innerStmt.getTbl(),
         innerStmt.getComment(), null, partitionColsSql,
-        innerStmt.getTblPrimaryKeyColumnNames(), innerStmt.getForeignKeysList(),
+        innerStmt.getTblPrimaryKeyColumnNames(), innerStmt.getForeignKeysSql(),
         kuduParamsSql, new Pair<>(innerStmt.getSortColumns(),
         innerStmt.getSortingOrder()), properties, innerStmt.getSerdeProperties(),
         innerStmt.isExternal(), innerStmt.getIfNotExists(), innerStmt.getRowFormat(),
@@ -335,7 +334,7 @@ public class ToSqlUtils {
 
     String storageHandlerClassName = table.getStorageHandlerClassName();
     List<String> primaryKeySql = new ArrayList<>();
-    List<TableDef.ForeignKey> foreignKeySql = new ArrayList<>();
+    List<String> foreignKeySql = new ArrayList<>();
     String kuduPartitionByParams = null;
     if (table instanceof FeKuduTable) {
       FeKuduTable kuduTable = (FeKuduTable) table;
@@ -375,6 +374,7 @@ public class ToSqlUtils {
       compression = HdfsCompression.fromHdfsInputFormatClass(inputFormat);
       if (table instanceof HdfsTable) {
         primaryKeySql = ((HdfsTable) table).getPrimaryKeysSql();
+        foreignKeySql = ((HdfsTable) table).getForeignKeysSql();
       }
     }
     HdfsUri tableLocation = location == null ? null : new HdfsUri(location);
@@ -386,13 +386,27 @@ public class ToSqlUtils {
   }
 
   /**
+   * Helper to check if foreign keys exist.
+   */
+  private static boolean getForeignKeysExist(List<String> foreignKeysSql) {
+    return foreignKeysSql != null && !foreignKeysSql.isEmpty();
+  }
+
+  /**
+   * Helper to check if primary keys exist.
+   */
+  private static boolean getPrimaryKeysExist(List<String> primaryKeysSql) {
+    return primaryKeysSql != null && !primaryKeysSql.isEmpty();
+  }
+
+  /**
    * Returns a "CREATE TABLE" string that creates the table with the specified properties.
    * The tableName must not be null. If columnsSql is null, the schema syntax will
    * not be generated.
    */
   public static String getCreateTableSql(String dbName, String tableName,
       String tableComment, List<String> columnsSql, List<String> partitionColumnsSql,
-      List<String> primaryKeysSql, List<TableDef.ForeignKey> foreignKeysList,
+      List<String> primaryKeysSql, List<String> foreignKeysSql,
       String kuduPartitionByParams, Pair<List<String>, TSortingOrder> sortProperties,
       Map<String, String> tblProperties, Map<String, String> serdeParameters,
       boolean isExternal, boolean ifNotExists, RowFormat rowFormat,
@@ -408,14 +422,17 @@ public class ToSqlUtils {
     if (columnsSql != null && !columnsSql.isEmpty()) {
       sb.append(" (\n  ");
       sb.append(Joiner.on(",\n  ").join(columnsSql));
-      if (primaryKeysSql != null && !primaryKeysSql.isEmpty()) {
-        sb.append(",\n  PRIMARY KEY (");
-        Joiner.on(", ").appendTo(sb, primaryKeysSql).append(")");
+      if (getPrimaryKeysExist(primaryKeysSql) || getForeignKeysExist(foreignKeysSql)) {
+        if (getPrimaryKeysExist(primaryKeysSql)) {
+          sb.append(",\n  PRIMARY KEY (");
+          Joiner.on(", ").appendTo(sb, primaryKeysSql).append(")");
+        }
+        if (getForeignKeysExist(foreignKeysSql)) {
+          sb.append(",\n  FOREIGN KEY");
+          Joiner.on(",\n  FOREIGN KEY").appendTo(sb, foreignKeysSql).append("\n");
+        }
+        sb.append(")");
       }
-      if (foreignKeysList != null && !foreignKeysList.isEmpty()) {
-
-      }
-      sb.append("\n)");
     } else {
       // CTAS for Kudu tables still print the primary key
       if (primaryKeysSql != null && !primaryKeysSql.isEmpty()) {

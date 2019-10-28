@@ -1594,6 +1594,43 @@ public class HdfsTable extends Table implements FeFsTable {
     return primaryKeyColNames;
   }
 
+  /**
+   * Get foreign keys information as strings. Useful for toSqlUtils.
+   * @return List of strings of the form "(col1, col2,..) REFERENCES [pk_db].pk_table
+   * (colA, colB,..)".
+   */
+  public List<String> getForeignKeysSql() {
+    List<String> foreignKeysSql = new ArrayList<>();
+    // Iterate through foreign keys list. This list may contain multiple foreign keys
+    // and each foreign key may contain multiple columns. The outerloop collects
+    // information common to a foreign key (pk table information). The inner
+    // loop collects column information.
+    List<SQLForeignKey> foreignKeys = getForeignKeys();
+    for (int i = 0; i < foreignKeys.size(); i++) {
+      String pkTableDb = foreignKeys.get(i).getPktable_db();
+      String pkTableName = foreignKeys.get(i).getPktable_name();
+      List<String> pkList = new ArrayList<>();
+      List<String> fkList = new ArrayList<>();
+      StringBuilder sb = new StringBuilder();
+      sb.append("(");
+      for (; i<foreignKeys.size(); i++) {
+        fkList.add(foreignKeys.get(i).getFkcolumn_name());
+        pkList.add(foreignKeys.get(i).getPkcolumn_name());
+        // Bail out of inner loop if the key_seq of the next ForeignKey is 1.
+        if (i + 1 < foreignKeys.size() && foreignKeys.get(i + 1).getKey_seq() == 1) {
+          break;
+        }
+      }
+      Joiner.on(", ").appendTo(sb, fkList).append(") ");
+      sb.append("REFERENCES ");
+      if (pkTableDb != null) sb.append(pkTableDb + ".");
+      sb.append(pkTableName + "(");
+      Joiner.on(", ").appendTo(sb, pkList).append(")");
+      foreignKeysSql.add(sb.toString());
+    }
+    return foreignKeysSql;
+  }
+
 
   /**
    * Returns the set of file formats that the partitions are stored in.
