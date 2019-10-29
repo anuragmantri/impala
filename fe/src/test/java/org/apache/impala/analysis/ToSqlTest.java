@@ -371,17 +371,18 @@ public class ToSqlTest extends FrontendTestBase {
         + "default.pk ( id INT, year STRING, PRIMARY KEY (id, year) ) STORED AS TEXTFILE",
         true);
 
-//    testToSql("create table default.pk(id int)", "default", "CREATE TABLE "
-//        + "default.pk ( id INT ) STORED AS TEXTFILE", true);
-//
-//    testToSql("create table default.pk2(id string)", "default", "CREATE TABLE "
-//        + "default.pk2 ( id STRING ) STORED AS TEXTFILE", true);
-//
-//    testToSql("create table default.fk(id int, year string, FOREIGN KEY (id) REFERENCES "
-//        + "default.pk(id) DISABLE NOVALIDATE RELY, FOREIGN KEY (year) REFERENCES  "
-//        + "default.pk2(year) DISABLE NOVALIDATE RELY)", "CREATE TABLE"
-//        + "default.fk ( id INT, year STRING, FOREIGN KEY (id) REFERENCES pk(id), "
-//        + "FOREIGN KEY (year) REFERENCES pk2(year) STORED AS TEXTFILE");
+    testToSql("create table default.pk(id int)", "default", "CREATE TABLE "
+        + "default.pk ( id INT ) STORED AS TEXTFILE", true);
+
+    testToSql("create table default.pk2(id string)", "default", "CREATE TABLE "
+        + "default.pk2 ( id STRING ) STORED AS TEXTFILE", true);
+
+    testToSql("create table default.fk(id int, year string, FOREIGN KEY (id) REFERENCES "
+        + "functional.alltypes(int_col) DISABLE NOVALIDATE RELY, FOREIGN KEY (year) "
+        + "REFERENCES functional.alltypes(string_col) DISABLE NOVALIDATE RELY)",
+        "default", "CREATE TABLE default.fk ( id INT, year STRING, FOREIGN KEY (id) "
+        + "REFERENCES functional.alltypes(int_col), FOREIGN KEY (year) REFERENCES "
+            + "functional.alltypes(string_col)STORED AS TEXTFILE");
   }
 
   @Test
