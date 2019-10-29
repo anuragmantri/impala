@@ -96,6 +96,21 @@ public class JdbcTest extends JdbcTestBase {
   }
 
   @Test
+  public void testMetadataPrimaryKeys() throws Exception {
+    addTestTable("create table default.pk_test (" +
+        "a int, b string, primary key (a, b) disable novalidate rely) ");
+    ResultSet rs = con_.getMetaData().getTables(
+        null, "default", "pk_test", null);
+    assertTrue(rs.next());
+    assertEquals("Incorrect table name", "pk_test",
+        rs.getString("TABLE_NAME"));
+    rs = con_.getMetaData().getPrimaryKeys("null", "default", "pk_test");
+    assertTrue(rs.next());
+    assertEquals(rs.getString(0), "a");
+    assertEquals(rs.getString(1), "b");
+  }
+
+  @Test
   public void testMetaDataGetCatalogs() throws SQLException {
     // Hive/Impala does not have catalogs.
     ResultSet rs = con_.getMetaData().getCatalogs();
