@@ -13,6 +13,23 @@ STORED AS TEXTFILE
 LOCATION '$$location_uri$$'
 ====
 ---- CREATE_TABLE
+# Test simple table with primary key
+CREATE TABLE pk (
+  id INT,
+  year STRING,
+  PRIMARY KEY (id, year) DISABLE NOVALIDATE RELY
+)
+STORED AS TEXTFILE
+---- RESULTS
+CREATE TABLE show_create_table_test_db.pk (
+  id INT,
+  year STRING,
+  PRIMARY KEY (id, year)
+)
+STORED AS TEXTFILE
+LOCATION '$$location_uri$$'
+====
+---- CREATE_TABLE
 # simple table with all types
 CREATE TABLE test2 (
   year INT,

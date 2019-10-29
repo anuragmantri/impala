@@ -431,8 +431,8 @@ public class ToSqlUtils {
           sb.append(",\n  FOREIGN KEY");
           Joiner.on(",\n  FOREIGN KEY").appendTo(sb, foreignKeysSql).append("\n");
         }
-        sb.append(")");
       }
+      sb.append("\n)");
     } else {
       // CTAS for Kudu tables still print the primary key
       if (primaryKeysSql != null && !primaryKeysSql.isEmpty()) {
