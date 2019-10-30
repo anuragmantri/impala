@@ -2245,13 +2245,11 @@ public class CatalogOpExecutor {
     Preconditions.checkState(!KuduTable.isKuduTable(newTable));
     synchronized (metastoreDdlLock_) {
       try (MetaStoreClient msClient = catalog_.getMetaStoreClient()) {
-        if (primaryKeys != null && !primaryKeys.isEmpty() || foreignKeys != null &&
-            !foreignKeys.isEmpty()) {
-          msClient.getHiveClient().createTableWithConstraints(newTable,
-              primaryKeys == null ? new ArrayList<>() : primaryKeys,
-              foreignKeys == null ? new ArrayList<>() : foreignKeys);
-        } else {
+        if (primaryKeys == null && foreignKeys == null) {
           msClient.getHiveClient().createTable(newTable);
+        } else {
+          msClient.getHiveClient().createTableWithConstraints(newTable, primaryKeys,
+              foreignKeys);
         }
         // TODO (HIVE-21807): Creating a table and retrieving the table information is
         // not atomic.

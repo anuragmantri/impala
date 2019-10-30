@@ -2356,19 +2356,22 @@ public class AnalyzeDDLTest extends FrontendTestBase {
     AnalyzesOk("create table foo(id int, year int, primary key (id, year) disable "
         + "novalidate rely)");
     AnalyzesOk("create table fk(id int, year int, primary key (id, year) disable "
-        + "novalidate rely, foreign key(id) REFERENCES pk(id) DISABLE NOVALIDATE RELY)");
+        + "novalidate rely, foreign key(id) REFERENCES functional.alltypes(int_col) "
+        + "DISABLE NOVALIDATE RELY)");
     AnalyzesOk("create table foo(id int, year int, foreign key (id) references "
-        + "pk(id) disable novalidate rely)");
+        + "functional.alltypes(int_col) disable novalidate rely)");
     AnalyzesOk("create table foo(id int, year int, foreign key (id) references "
-        + "pk(id))");
+        + "functional.alltypes(id))");
     AnalysisError("create table foo(id int, year int, primary key (id, year) enable"
         + " novalidate rely)", "ENABLE feature is not supported yet.");
     AnalysisError("create table foo(id int, year int, primary key (id, year) disable"
         + " validate rely)", "VALIDATE feature is not supported yet.");
     AnalysisError("create table foo(id int, year int, foreign key (id) references "
-        + "pk(id) enable novalidate rely)", "ENABLE feature is not supported yet.");
+        + "functional.alltypes(int_col) enable novalidate rely)", "ENABLE feature is "
+        + "not supported yet.");
     AnalysisError("create table foo(id int, year int, foreign key (id) references "
-        + "pk(id) disable validate rely)", "VALIDATE feature is not supported yet.");
+        + "functional.alltypes(int_col) disable validate rely)", "VALIDATE feature is "
+        + "not supported yet.");
 
     {
       // Check that long_properties fail at the analysis layer

@@ -30,6 +30,23 @@ STORED AS TEXTFILE
 LOCATION '$$location_uri$$'
 ====
 ---- CREATE_TABLE
+# Test simple table with foreign key
+CREATE TABLE fk (
+  id INT,
+  year STRING,
+  FOREIGN KEY (id, year) REFERENCES functional.alltypes(int_col, string_col) DISABLE NOVALIDATE RELY
+)
+STORED AS TEXTFILE
+---- RESULTS
+CREATE TABLE fk (
+  id INT,
+  year STRING,
+  FOREIGN KEY (id, year) REFERENCES functional.alltypes(int_col, string_col)
+)
+STORED AS TEXTFILE
+LOCATION '$$location_uri$$'
+====
+---- CREATE_TABLE
 # simple table with all types
 CREATE TABLE test2 (
   year INT,
