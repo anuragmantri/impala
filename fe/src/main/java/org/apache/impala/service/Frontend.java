@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -39,6 +40,8 @@ import org.apache.hadoop.hive.metastore.api.DataOperationType;
 import org.apache.hadoop.hive.metastore.api.LockComponent;
 import org.apache.hadoop.hive.metastore.api.LockLevel;
 import org.apache.hadoop.hive.metastore.api.LockType;
+import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
+import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.impala.analysis.AlterDbStmt;
 import org.apache.impala.analysis.AnalysisContext;
 import org.apache.impala.analysis.AnalysisContext.AnalysisResult;
@@ -827,6 +830,75 @@ public class Frontend {
   }
 
   /**
+   * Returns a list of primary keys for a given table only if the user has access to all
+   * the columns that form the primary key. This is because all SQLPrimaryKeys for a
+   * given table together form the primary key.
+   */
+  public List<SQLPrimaryKey> getPrimaryKeys(FeTable table, User user)
+      throws InternalException {
+    Preconditions.checkNotNull(table);
+    List<SQLPrimaryKey> pkList = table.getPrimaryKeys();
+    for (SQLPrimaryKey pk : pkList) {
+      if (authzFactory_.getAuthorizationConfig().isEnabled()) {
+        PrivilegeRequest privilegeRequest = new PrivilegeRequestBuilder(
+            authzFactory_.getAuthorizableFactory())
+            .any().onColumn(table.getTableName().getDb(), table.getTableName().getTbl(),
+            pk.getColumn_name(), table.getOwnerUser()).build();
+        // If any of the pk columns is not accessible to the user, we return an empty
+        // list.
+        if (!authzChecker_.get().hasAccess(user, privilegeRequest)) {
+          return new ArrayList<>();
+        }
+      }
+    }
+    return pkList;
+  }
+
+  /**
+   * Returns a list of foreign keys for a given table only if both the primary key
+   * column and the foreign key columns are accessible to user.
+   */
+  public List<SQLForeignKey> getForeignKeys(FeTable table, User user)
+      throws InternalException {
+    Preconditions.checkNotNull(table);
+    // Foreign keys can be in a sequence or unrelated. We do not want to show only
+    // a part of a sequence of keys. So if any of the keys in a sequence has incorrect
+    // privileges, we omit the entire sequence.
+    Set<String> omitList = new HashSet<>();
+    List<SQLForeignKey> fkList = new ArrayList<>();
+    for (SQLForeignKey fk : table.getForeignKeys()) {
+      String fkName = fk.getFk_name();
+      if(!omitList.contains(fkName)) {
+        if (authzFactory_.getAuthorizationConfig().isEnabled()) {
+          PrivilegeRequest fkPrivilegeRequest = new PrivilegeRequestBuilder(
+              authzFactory_.getAuthorizableFactory())
+              .any().onColumn(table.getTableName().getDb(), table.getTableName().getTbl(),
+              fk.getFkcolumn_name(), table.getOwnerUser()).build();
+
+          // Build privilege request for PK table.
+          FeTable pkTable =
+              getCatalog().getTableNoThrow(fk.getPktable_db(), fk.getPktable_name());
+          PrivilegeRequest pkPrivilegeRequest = new PrivilegeRequestBuilder(
+              authzFactory_.getAuthorizableFactory())
+              .any().onColumn(pkTable.getTableName().getDb(),
+              pkTable.getTableName().getTbl(), fk.getPkcolumn_name(),
+              pkTable.getOwnerUser()).build();
+          if (!authzChecker_.get().hasAccess(user, fkPrivilegeRequest) ||
+              !authzChecker_.get().hasAccess(user, pkPrivilegeRequest)) {
+            omitList.add(fkName);
+          }
+        }
+      }
+    }
+    for (SQLForeignKey fk : table.getForeignKeys()) {
+      if (!omitList.contains(fk.getFk_name())) {
+        fkList.add(fk);
+      }
+    }
+    return fkList;
+  }
+
+  /**
    * Returns all databases in catalog cache that match the pattern of 'matcher' and are
    * accessible to 'user'.
    */
@@ -1572,6 +1644,9 @@ public class Frontend {
       case GET_CATALOGS: return MetadataOp.getCatalogs();
       case GET_TABLE_TYPES: return MetadataOp.getTableTypes();
       case GET_FUNCTIONS: return MetastoreShim.execGetFunctions(this, request, user);
+      case GET_PRIMARY_KEYS: return MetastoreShim.execGetPrimaryKeys(this, request, user);
+      case GET_CROSS_REFERECE: return MetastoreShim.execGetCrossReference(this, request,
+          user);
       default:
         throw new NotImplementedException(request.opcode + " has not been implemented.");
     }

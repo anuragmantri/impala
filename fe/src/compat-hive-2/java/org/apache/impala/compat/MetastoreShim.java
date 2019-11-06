@@ -58,7 +58,9 @@ import org.apache.hadoop.hive.metastore.messaging.InsertMessage;
 import org.apache.hadoop.hive.metastore.messaging.MessageDeserializer;
 import org.apache.hadoop.hive.metastore.messaging.json.ExtendedJSONMessageFactory;
 import org.apache.hive.service.rpc.thrift.TGetColumnsReq;
+import org.apache.hive.service.rpc.thrift.TGetCrossReferenceReq;
 import org.apache.hive.service.rpc.thrift.TGetFunctionsReq;
+import org.apache.hive.service.rpc.thrift.TGetPrimaryKeysReq;
 import org.apache.hive.service.rpc.thrift.TGetSchemasReq;
 import org.apache.hive.service.rpc.thrift.TGetTablesReq;
 import org.apache.impala.authorization.User;
@@ -219,6 +221,22 @@ public class MetastoreShim {
     TGetTablesReq req = request.getGet_tables_req();
     return MetadataOp.getTables(frontend, req.getCatalogName(), req.getSchemaName(),
         req.getTableName(), req.getTableTypes(), user);
+  }
+
+  public static TResultSet execGetPrimaryKeys(
+      Frontend frontend, TMetadataOpRequest request, User user) throws ImpalaException {
+    TGetPrimaryKeysReq req = request.getGet_primary_keys_req();
+    return MetadataOp.getPrimaryKeys(frontend, req.getCatalogName(),
+        req.getSchemaName(), req.getTableName(), user);
+  }
+
+  public static TResultSet execGetCrossReference(
+      Frontend frontend, TMetadataOpRequest request, User user) throws ImpalaException {
+    TGetCrossReferenceReq req = request.getGet_cross_reference_req();
+    return MetadataOp.getCrossReference(frontend, req.getParentCatalogName(),
+        req.getParentSchemaName(), req.getParentTableName(),
+        req.getForeignCatalogName(), req.getForeignSchemaName(),
+        req.getForeignTableName(), user);
   }
 
   public static TResultSet execGetSchemas(

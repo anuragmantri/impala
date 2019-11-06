@@ -33,6 +33,8 @@ import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsData;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsObj;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
+import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.impala.analysis.TableName;
 import org.apache.impala.compat.MetastoreShim;
 import org.apache.impala.common.ImpalaRuntimeException;
@@ -108,6 +110,10 @@ public abstract class Table extends CatalogObjectImpl implements FeTable {
 
   // map from lowercase column name to Column object.
   private final Map<String, Column> colsByName_ = new HashMap<>();
+
+  protected final List<SQLPrimaryKey> primaryKeys_ = new ArrayList<>();
+
+  protected final List<SQLForeignKey> foreignKeys_ = new ArrayList<>();
 
   // Type of this table (array of struct) that mirrors the columns. Useful for analysis.
   protected final ArrayType type_ = new ArrayType(new StructType());
@@ -598,6 +604,12 @@ public abstract class Table extends CatalogObjectImpl implements FeTable {
 
   @Override // FeTable
   public List<Column> getColumns() { return colsByPos_; }
+
+  @Override
+  public List<SQLPrimaryKey> getPrimaryKeys() { return primaryKeys_; }
+
+  @Override
+  public List<SQLForeignKey> getForeignKeys() { return foreignKeys_; }
 
   @Override // FeTable
   public List<String> getColumnNames() { return Column.toColumnNames(colsByPos_); }

@@ -526,11 +526,13 @@ public class LocalFsTable extends LocalTable implements FeFsTable {
 
   @Override
   public List<SQLPrimaryKey> getPrimaryKeys() {
-    return null;
+    // TODO: return primary keys after IMPALA-9158
+    return new ArrayList<>();
   }
 
   @Override
   public List<SQLForeignKey> getForeignKeys() {
-    return null;
+    // TODO: return foreign keys after IMPALA-9158
+    return new ArrayList<>();
   }
 }

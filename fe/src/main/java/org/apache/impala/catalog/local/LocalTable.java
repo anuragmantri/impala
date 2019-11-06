@@ -24,6 +24,8 @@ import javax.annotation.Nullable;
 
 import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.api.ColumnStatisticsObj;
+import org.apache.hadoop.hive.metastore.api.SQLForeignKey;
+import org.apache.hadoop.hive.metastore.api.SQLPrimaryKey;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.impala.analysis.TableName;
 import org.apache.impala.catalog.ArrayType;
@@ -205,6 +207,18 @@ abstract class LocalTable implements FeTable {
   public List<Column> getColumns() {
     // TODO(todd) why does this return ArrayList instead of List?
     return new ArrayList<>(cols_.colsByPos_);
+  }
+
+  @Override
+  public List<SQLPrimaryKey> getPrimaryKeys() {
+    // TODO: return primary keys after IMPALA-9158
+    return new ArrayList<>();
+  }
+
+  @Override
+  public List<SQLForeignKey> getForeignKeys() {
+    // TODO: return foreign keys after IMPALA-9158
+    return new ArrayList<>();
   }
 
   @Override
