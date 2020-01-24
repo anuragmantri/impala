@@ -174,6 +174,12 @@ class DirectMetaProvider implements MetaProvider {
           new PrimaryKeysRequest(msTbl.getDbName(), msTbl.getTableName())));
       foreignKeys.addAll(c.getHiveClient().getForeignKeys(new ForeignKeysRequest(null,
           null, msTbl.getDbName(), msTbl.getTableName())));
+
+      // Primary keys are returned by HMS in inconsistent orders, we store them in
+      // canonical form. We store them in alphabetical order of primary key name. If
+      // the key name is same (i.e composite key) we store it in increasing order of
+      // key_seq.
+      primaryKeys.sort(new MetaStoreUtil.SqlPrimaryKeyComparator());
     }
     return new Pair<>(primaryKeys, foreignKeys);
   }
