@@ -72,6 +72,9 @@ Status CatalogOpExecutor::Exec(const TCatalogOpRequest& request) {
   SCOPED_TIMER(exec_timer);
   const TNetworkAddress& address =
       MakeNetworkAddress(FLAGS_catalog_service_host, FLAGS_catalog_service_port);
+  IpAddr ip_address;
+  // Resolve IP here.
+  RETURN_IF_ERROR(HostnameToIpAddr(address.hostname, &ip_address));
   RETURN_IF_ERROR(status);
   switch (request.op_type) {
     case TCatalogOpType::DDL: {
