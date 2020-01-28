@@ -48,6 +48,7 @@ import org.apache.impala.catalog.FeFsTable;
 import org.apache.impala.catalog.HdfsFileFormat;
 import org.apache.impala.catalog.HdfsTable;
 import org.apache.impala.catalog.PrunablePartition;
+import org.apache.impala.catalog.SqlConstraints;
 import org.apache.impala.catalog.local.MetaProvider.PartitionMetadata;
 import org.apache.impala.catalog.local.MetaProvider.PartitionRef;
 import org.apache.impala.catalog.local.MetaProvider.TableMetaRef;
@@ -109,16 +110,9 @@ public class LocalFsTable extends LocalTable implements FeFsTable {
 
 
   /**
-   * List of primary keys associated with the table. An empty list could
-   * mean either the table does not have any primary keys or the table is not loaded.
+   * SQL constraints associated with the table.
    */
-  private final List<SQLPrimaryKey> primaryKeys_ = new ArrayList<>();
-
-  /**
-   * List of foreign keys associated with the table. An empty list could
-   * mean either the table does not have any foreign keys or the table is not loaded.
-   */
-  private final List<SQLForeignKey> foreignKeys_ = new ArrayList<>();
+  private SqlConstraints sqlConstraints_;
 
   /**
    * The Avro schema for this table. Non-null if this table is an Avro table.
@@ -513,13 +507,7 @@ public class LocalFsTable extends LocalTable implements FeFsTable {
    * Populate constraint information by making a request to MetaProvider.
    */
   private void loadConstraints() throws TException {
-    Pair<List<SQLPrimaryKey>, List<SQLForeignKey>> constraints =
-        db_.getCatalog().getMetaProvider().loadConstraints(ref_, msTable_);
-    // clear and load constraints.
-    primaryKeys_.clear();
-    foreignKeys_.clear();
-    primaryKeys_.addAll(constraints.first);
-    foreignKeys_.addAll(constraints.second);
+    sqlConstraints_ = db_.getCatalog().getMetaProvider().loadConstraints(ref_, msTable_);
   }
 
   /**
@@ -552,26 +540,13 @@ public class LocalFsTable extends LocalTable implements FeFsTable {
   }
 
   @Override
-  public List<SQLPrimaryKey> getPrimaryKeys() {
+  public SqlConstraints getSqlConstraints() {
     try {
-      loadConstraints();
+       loadConstraints();
     } catch (TException e) {
       throw new LocalCatalogException("Failed to load primary keys for table "
           + getFullName(), e);
     }
-    // Once loaded, clients must not be able to modify this list.
-    return ImmutableList.copyOf(primaryKeys_);
-  }
-
-  @Override
-  public List<SQLForeignKey> getForeignKeys() {
-    try {
-      loadConstraints();
-    } catch (TException e) {
-      throw new LocalCatalogException("Failed to load foreign keys for table "
-          + getFullName(), e);
-    }
-    // Once loaded, clients must not be able to modify this list.
-    return ImmutableList.copyOf(foreignKeys_);
+    return sqlConstraints_;
   }
 }

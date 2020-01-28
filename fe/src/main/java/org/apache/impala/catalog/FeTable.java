@@ -93,14 +93,9 @@ public interface FeTable {
   List<String> getColumnNames();
 
   /**
-   * @return the list of primary keys for this table.
+   * @return SQL constraints for the table.
    */
-  List<SQLPrimaryKey> getPrimaryKeys();
-
-  /**
-   * @return the list of foreign keys for this table.
-   */
-  List<SQLForeignKey> getForeignKeys();
+  SqlConstraints getSqlConstraints();
 
   /**
    * @return an unmodifiable list of all partition columns.

@@ -429,18 +429,16 @@ public class JdbcTest extends JdbcTestBase {
     ResultSetMetaData md = rs.getMetaData();
     assertEquals("Incorrect number of columns seen", 6, md.getColumnCount());
     // TODO (IMPALA-9158): Remove this check.
-    if (!TestUtils.isCatalogV2Enabled("localhost", 25020)) {
-      int pkCount = 0;
-      while (rs.next()) {
-        pkCount++;
-        assertEquals("", rs.getString("TABLE_CAT"));
-        assertEquals("functional", rs.getString("TABLE_SCHEM"));
-        assertEquals("parent_table", rs.getString("TABLE_NAME"));
-        assertTrue(pkList.contains(rs.getString("COLUMN_NAME")));
-        assertTrue(rs.getString("PK_NAME").length() > 0);
-      }
-      assertEquals(2, pkCount);
+    int pkCount = 0;
+    while (rs.next()) {
+      pkCount++;
+      assertEquals("", rs.getString("TABLE_CAT"));
+      assertEquals("functional", rs.getString("TABLE_SCHEM"));
+      assertEquals("parent_table", rs.getString("TABLE_NAME"));
+      assertTrue(pkList.contains(rs.getString("COLUMN_NAME")));
+      assertTrue(rs.getString("PK_NAME").length() > 0);
     }
+    assertEquals(2, pkCount);
   }
 
   @Test
