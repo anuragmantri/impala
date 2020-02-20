@@ -150,6 +150,7 @@ class DataStreamTest : public testing::Test {
     exec_env_->InitBufferPool(32 * 1024, 1024 * 1024 * 1024, 32 * 1024);
     runtime_state_.reset(new RuntimeState(TQueryCtx(), exec_env_.get()));
     mem_pool_.reset(new MemPool(&tracker_));
+    exhange_hash_seed_ = 0x66bd68df22c3ef37 ^ runtime_state_->query_id().hi;
 
     // Register a BufferPool client for allocating buffers for row batches.
     ABORT_IF_ERROR(exec_env_->buffer_pool()->RegisterClient(
@@ -274,6 +275,9 @@ class DataStreamTest : public testing::Test {
   };
   // Allocate each SenderInfo separately so the address doesn't change.
   vector<unique_ptr<SenderInfo>> sender_info_;
+
+  // Exhange hash seed
+  uint64_t exhange_hash_seed_;
 
   struct ReceiverInfo {
     TPartitionType::type stream_type;
@@ -470,7 +474,7 @@ class DataStreamTest : public testing::Test {
           // hash-partitioned streams send values to the right partition
           int64_t value = *j;
           uint64_t hash_val = RawValue::GetHashValueFastHash(&value, TYPE_BIGINT,
-              KrpcDataStreamSender::EXCHANGE_HASH_SEED);
+              exhange_hash_seed_);
           EXPECT_EQ(hash_val % receiver_info_.size(), info->receiver_num);
         }
       }

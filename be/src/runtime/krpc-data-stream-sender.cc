@@ -79,9 +79,9 @@ Status KrpcDataStreamSenderConfig::Init(
     const TDataSink& tsink, const RowDescriptor* input_row_desc, RuntimeState* state) {
   RETURN_IF_ERROR(DataSinkConfig::Init(tsink, input_row_desc, state));
   DCHECK(tsink_->__isset.stream_sink);
-  partition_type_ = tsink_->stream_sink.output_partition.type;
-  if (partition_type_ == TPartitionType::HASH_PARTITIONED
-      || partition_type_ == TPartitionType::KUDU) {
+  auto& partition_type = tsink_->stream_sink.output_partition.type;
+  if (partition_type == TPartitionType::HASH_PARTITIONED
+      || partition_type == TPartitionType::KUDU) {
     RETURN_IF_ERROR(
         ScalarExpr::Create(tsink_->stream_sink.output_partition.partition_exprs,
             *input_row_desc_, state, &partition_exprs_));
@@ -734,7 +734,7 @@ KrpcDataStreamSender::KrpcDataStreamSender(TDataSinkId sink_id, int sender_id,
     // Randomize the order we open/transmit to channels to avoid thundering herd problems.
     random_shuffle(channels_.begin(), channels_.end());
   }
-
+  exchange_hash_seed_ = 0x66bd68df22c3ef37 ^ state->query_id().hi;
 }
 
 KrpcDataStreamSender::~KrpcDataStreamSender() {
@@ -830,8 +830,14 @@ Status KrpcDataStreamSenderConfig::CodegenHashRow(
   llvm::Value* row_arg = args[1];
 
   // Store the initial seed to hash_val
+<<<<<<< HEAD
   llvm::Value* hash_val =
       codegen->GetI64Constant(KrpcDataStreamSender::EXCHANGE_HASH_SEED);
+||||||| merged common ancestors
+  llvm::Value* hash_val = codegen->GetI64Constant(EXCHANGE_HASH_SEED);
+=======
+  llvm::Value* hash_val = codegen->GetI64Constant(exchange_hash_seed_);
+>>>>>>> Initial change.
 
   // Unroll the loop and codegen each of the partition expressions
   for (int i = 0; i < partition_exprs_.size(); ++i) {
@@ -973,7 +979,7 @@ Status KrpcDataStreamSender::AddRowToChannel(const int channel_id, TupleRow* row
 }
 
 uint64_t KrpcDataStreamSender::HashRow(TupleRow* row) {
-  uint64_t hash_val = EXCHANGE_HASH_SEED;
+  uint64_t hash_val = exchange_hash_seed_;
   for (ScalarExprEvaluator* eval : partition_expr_evals_) {
     void* partition_val = eval->GetValue(row);
     // We can't use the crc hash function here because it does not result in
