@@ -820,6 +820,16 @@ struct TEventProcessorMetrics {
   10: optional i64 last_synced_event_id
 }
 
+struct TStartEventProcessorRequest {
+  // Event polling frequency
+  1: required i32 hms_polling_frequency
+}
+
+struct TStartEventProcessorResponse {
+  // Status of the events processor
+  1: required string status
+}
+
 // Response to GetCatalogServerMetrics() call.
 struct TGetCatalogServerMetricsResponse {
   // Partial fetch RPC queue length.

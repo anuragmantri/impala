@@ -108,6 +108,11 @@ class Catalog {
   /// tables as well as the tables with the highest memory requirements.
   Status GetCatalogUsage(TGetCatalogUsageResponse* response);
 
+  /// Starts events processor with a polling frequency specified in
+  /// TStartEventsProcessorRequest
+  Status StartEventProcessor(const TStartEventProcessorRequest& request,
+      TStartEventProcessorResponse* response);
+
   /// Returns the metastore event processor summary view. The summary string
   /// in the response can contain detailed metrics along with status
   Status GetEventProcessorSummary(TEventProcessorMetricsSummaryResponse* response);
@@ -150,6 +155,7 @@ class Catalog {
   jmethodID get_catalog_usage_id_; // JniCatalog.getCatalogUsage()
   jmethodID get_catalog_server_metrics_; // JniCatalog.getCatalogServerMetrics()
   jmethodID get_event_processor_summary_; // JniCatalog.getEventProcessorMetrics()
+  jmethodID start_event_processor_; // JniCatalog.startEventProcessor()
   jmethodID get_dbs_id_; // JniCatalog.getDbs()
   jmethodID get_table_names_id_; // JniCatalog.getTableNames()
   jmethodID get_table_metrics_id_; // JniCatalog.getTableMetrics()

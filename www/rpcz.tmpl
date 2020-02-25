@@ -223,7 +223,7 @@ function reset_method(server, method) {
   xhr.send();
 }
 
-function reset_server(server) {
+function (server) {
   var xhr = new XMLHttpRequest();
   xhr.open('GET', make_url("/rpcz_reset?server=" + server), true);
   xhr.send();

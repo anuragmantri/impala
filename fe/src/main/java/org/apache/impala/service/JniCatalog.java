@@ -43,6 +43,7 @@ import org.apache.impala.thrift.TCatalogObject;
 import org.apache.impala.thrift.TDatabase;
 import org.apache.impala.thrift.TDdlExecRequest;
 import org.apache.impala.thrift.TErrorCode;
+import org.apache.impala.thrift.TEventProcessorMetrics;
 import org.apache.impala.thrift.TFunction;
 import org.apache.impala.thrift.TGetCatalogDeltaResponse;
 import org.apache.impala.thrift.TGetCatalogDeltaRequest;
@@ -62,6 +63,7 @@ import org.apache.impala.thrift.TPrioritizeLoadRequest;
 import org.apache.impala.thrift.TResetMetadataRequest;
 import org.apache.impala.thrift.TSentryAdminCheckRequest;
 import org.apache.impala.thrift.TSentryAdminCheckResponse;
+import org.apache.impala.thrift.TStartEventProcessorRequest;
 import org.apache.impala.thrift.TStatus;
 import org.apache.impala.thrift.TUniqueId;
 import org.apache.impala.thrift.TUpdateCatalogRequest;
@@ -345,8 +347,16 @@ public class JniCatalog {
     TGetCatalogServerMetricsResponse response = new TGetCatalogServerMetricsResponse();
     response.setCatalog_partial_fetch_rpc_queue_len(
         catalog_.getPartialFetchRpcQueueLength());
-    response.setEvent_metrics(catalog_.getEventProcessorMetrics());
+    TEventProcessorMetrics em = catalog_.getEventProcessorMetrics();
+    response.setEvent_metrics(em);
     TSerializer serializer = new TSerializer(protocolFactory_);
     return serializer.serialize(response);
+  }
+
+  public byte[] startEventProcessor(byte[] req) throws ImpalaException, TException {
+    TStartEventProcessorRequest thriftReq = new TStartEventProcessorRequest();
+    JniUtil.deserializeThrift(protocolFactory_, thriftReq, req);
+    TSerializer serializer = new TSerializer(protocolFactory_);
+    return serializer.serialize(catalog_.startEventsProcessor(thriftReq));
   }
 }

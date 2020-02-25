@@ -232,6 +232,9 @@ class CatalogServer {
   // metastore event processor metrics and adds it to the document
   void EventMetricsUrlCallback(
       const Webserver::WebRequest& req, rapidjson::Document* document);
+
+  void StartEventProcessorCallback(
+      const Webserver::WebRequest& req, rapidjson::Document* document);
 };
 
 }

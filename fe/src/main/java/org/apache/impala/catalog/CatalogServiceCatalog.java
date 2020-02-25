@@ -81,6 +81,8 @@ import org.apache.impala.thrift.TPartitionKeyValue;
 import org.apache.impala.thrift.TPartitionStats;
 import org.apache.impala.thrift.TPrincipalType;
 import org.apache.impala.thrift.TPrivilege;
+import org.apache.impala.thrift.TStartEventProcessorRequest;
+import org.apache.impala.thrift.TStartEventProcessorResponse;
 import org.apache.impala.thrift.TTable;
 import org.apache.impala.thrift.TTableName;
 import org.apache.impala.thrift.TTableUsage;
@@ -387,9 +389,39 @@ public class CatalogServiceCatalog extends Catalog {
     }
   }
 
+  private ExternalEventsProcessor getEventsProcessor(int pollingFrequency)
+      throws ImpalaException {
+    Preconditions.checkState(pollingFrequency > 0);
+    try (MetaStoreClient metaStoreClient = getMetaStoreClient()) {
+      CurrentNotificationEventId currentNotificationId =
+          metaStoreClient.getHiveClient().getCurrentNotificationEventId();
+      return MetastoreEventsProcessor.getInstance(
+          this, currentNotificationId.getEventId(), pollingFrequency);
+    } catch (TException e) {
+      LOG.error("Unable to fetch the current notification event id from metastore."
+          + "Metastore event processing will be disabled.", e);
+      throw new CatalogException(
+          "Fatal error while initializing metastore event processor", e);
+    }
+  }
+
   @VisibleForTesting
   public ExternalEventsProcessor getMetastoreEventProcessor() {
     return metastoreEventProcessor_;
+  }
+
+  public TStartEventProcessorResponse startEventsProcessor(
+      TStartEventProcessorRequest req) throws ImpalaException {
+    TStartEventProcessorResponse response = new TStartEventProcessorResponse();
+    metastoreEventProcessor_ = getEventsProcessor(2);
+    Preconditions.checkState(metastoreEventProcessor_
+        instanceof MetastoreEventsProcessor);
+      metastoreEventProcessor_.start();
+      String status =
+          ((MetastoreEventsProcessor) metastoreEventProcessor_).getStatus().toString();
+      Preconditions.checkState(status.equals("ACTIVE"));
+      response.setStatus(status);
+    return response;
   }
 
   public boolean isEventProcessingActive() {

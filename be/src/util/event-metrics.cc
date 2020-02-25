@@ -69,7 +69,7 @@ void MetastoreEventMetrics::InitMetastoreEventMetrics(MetricGroup* metric_group)
       EVENT_PROCESSOR_STATUS_METRIC_NAME, "Unavailable");
 
   // if event processing is disabled no need to initialized the other metrics
-  if (FLAGS_hms_event_polling_interval_s <= 0) return;
+  //if (FLAGS_hms_event_polling_interval_s <= 0) return;
 
   NUM_EVENTS_RECEIVED_COUNTER =
       event_metrics->AddCounter(NUMBER_EVENTS_RECEIVED_METRIC_NAME, 0);

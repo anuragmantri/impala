@@ -296,6 +296,9 @@ void CatalogServer::RegisterWebpages(Webserver* webserver) {
   webserver->RegisterUrlCallback(EVENT_WEB_PAGE, EVENT_METRICS_TEMPLATE,
       [this](const auto& args, auto* doc) { this->EventMetricsUrlCallback(args, doc); },
       false);
+  webserver->RegisterUrlCallback("/start_event_processor", "",
+      [this](const auto& args, auto* doc) { this->StartEventProcessorCallback(args, doc)
+      ; }, false);
   RegisterLogLevelCallbacks(webserver, true);
 }
 
@@ -591,6 +594,8 @@ void CatalogServer::GetCatalogUsage(Document* document) {
 
 void CatalogServer::EventMetricsUrlCallback(
     const Webserver::WebRequest& req, Document* document) {
+  Value is_event_metric(true);
+  document->AddMember("is_event_metric", is_event_metric, document->GetAllocator());
   TEventProcessorMetricsSummaryResponse event_processor_summary_response;
   Status status = catalog_->GetEventProcessorSummary(&event_processor_summary_response);
   if (!status.ok()) {
@@ -603,6 +608,19 @@ void CatalogServer::EventMetricsUrlCallback(
       event_processor_summary_response.summary.c_str(), document->GetAllocator());
   document->AddMember(
       "event_processor_metrics", event_processor_summary, document->GetAllocator());
+}
+
+void CatalogServer::StartEventProcessorCallback(
+    const Webserver::WebRequest& req, Document* document) {
+  TStartEventProcessorRequest request;
+  request.__set_hms_polling_frequency(2);
+  TStartEventProcessorResponse response;
+  Status status = catalog_->StartEventProcessor(request, &response);
+  if (!status.ok()) {
+    Value error(status.GetDetail().c_str(), document->GetAllocator());
+    document->AddMember("error", error, document->GetAllocator());
+    return;
+  }
 }
 
 void CatalogServer::CatalogObjectsUrlCallback(const Webserver::WebRequest& req,
