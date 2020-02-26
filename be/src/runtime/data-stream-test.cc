@@ -474,6 +474,7 @@ class DataStreamTest : public testing::Test {
           uint64_t hash_val = RawValue::GetHashValueFastHash(&value, TYPE_BIGINT,
               GetExchangeHashSeed(runtime_state_->query_id()));
           EXPECT_EQ(hash_val % receiver_info_.size(), info->receiver_num);
+          CheckHashPartitionedReceivers(value);
         }
       }
     }
@@ -491,19 +492,13 @@ class DataStreamTest : public testing::Test {
     }
   }
 
-  // Verify hash partitioned recievers with different query ids
-  void CheckHashPartitionedReceivers(TPartitionType::type stream_type) {
-    ASSERT_EQ(stream_type, TPartitionType::HASH_PARTITIONED);
-    ReceiverInfo* info = receiver_info_[0].get();
-    for (multiset<int64_t>::iterator j = info->data_values.begin();
-         j != info->data_values.end(); ++j) {
-      int64_t value = *j;
+  // Verify different query ids produce different hash buckets.
+  void CheckHashPartitionedReceivers(int64_t value) {
       uint64_t hash_val_1 = RawValue::GetHashValueFastHash(&value, TYPE_BIGINT,
           GetExchangeHashSeed(UuidToQueryId(random_generator()())));
       uint64_t hash_val_2 = RawValue::GetHashValueFastHash(&value, TYPE_BIGINT,
           GetExchangeHashSeed(UuidToQueryId(random_generator()())));
       EXPECT_NE(hash_val_1 % receiver_info_.size(), hash_val_2 % receiver_info_.size());
-    }
   }
 
   uint64_t GetExchangeHashSeed(TUniqueId query_id) {
@@ -600,9 +595,6 @@ class DataStreamTest : public testing::Test {
     CheckSenders();
     JoinReceivers();
     CheckReceivers(stream_type, num_senders);
-    if (stream_type == TPartitionType::HASH_PARTITIONED) {
-      CheckHashPartitionedReceivers(stream_type);
-    }
   }
 };
 
