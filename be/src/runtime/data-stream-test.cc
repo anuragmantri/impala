@@ -41,6 +41,7 @@
 #include "runtime/raw-value.inline.h"
 #include "service/data-stream-service.h"
 #include "service/fe-support.h"
+#include "util/uid-util.h"
 #include "util/cpu-info.h"
 #include "util/disk-info.h"
 #include "util/debug-util.h"
@@ -65,6 +66,7 @@ using namespace impala;
 using namespace apache::thrift;
 using namespace apache::thrift::protocol;
 
+using boost::uuids::random_generator;
 using kudu::MetricEntity;
 using kudu::rpc::ResultTracker;
 using kudu::rpc::RpcContext;
@@ -150,7 +152,6 @@ class DataStreamTest : public testing::Test {
     exec_env_->InitBufferPool(32 * 1024, 1024 * 1024 * 1024, 32 * 1024);
     runtime_state_.reset(new RuntimeState(TQueryCtx(), exec_env_.get()));
     mem_pool_.reset(new MemPool(&tracker_));
-    exhange_hash_seed_ = 0x66bd68df22c3ef37 ^ runtime_state_->query_id().hi;
 
     // Register a BufferPool client for allocating buffers for row batches.
     ABORT_IF_ERROR(exec_env_->buffer_pool()->RegisterClient(
@@ -275,9 +276,6 @@ class DataStreamTest : public testing::Test {
   };
   // Allocate each SenderInfo separately so the address doesn't change.
   vector<unique_ptr<SenderInfo>> sender_info_;
-
-  // Exhange hash seed
-  uint64_t exhange_hash_seed_;
 
   struct ReceiverInfo {
     TPartitionType::type stream_type;
@@ -474,7 +472,7 @@ class DataStreamTest : public testing::Test {
           // hash-partitioned streams send values to the right partition
           int64_t value = *j;
           uint64_t hash_val = RawValue::GetHashValueFastHash(&value, TYPE_BIGINT,
-              exhange_hash_seed_);
+              GetExchangeHashSeed(runtime_state_->query_id()));
           EXPECT_EQ(hash_val % receiver_info_.size(), info->receiver_num);
         }
       }
@@ -491,6 +489,25 @@ class DataStreamTest : public testing::Test {
         if (k/num_senders != *j) break;
       }
     }
+  }
+
+  // Verify hash partitioned recievers with different query ids
+  void CheckHashPartitionedReceivers(TPartitionType::type stream_type) {
+    ASSERT_EQ(stream_type, TPartitionType::HASH_PARTITIONED);
+    ReceiverInfo* info = receiver_info_[0].get();
+    for (multiset<int64_t>::iterator j = info->data_values.begin();
+         j != info->data_values.end(); ++j) {
+      int64_t value = *j;
+      uint64_t hash_val_1 = RawValue::GetHashValueFastHash(&value, TYPE_BIGINT,
+          GetExchangeHashSeed(UuidToQueryId(random_generator()())));
+      uint64_t hash_val_2 = RawValue::GetHashValueFastHash(&value, TYPE_BIGINT,
+          GetExchangeHashSeed(UuidToQueryId(random_generator()())));
+      EXPECT_NE(hash_val_1 % receiver_info_.size(), hash_val_2 % receiver_info_.size());
+    }
+  }
+
+  uint64_t GetExchangeHashSeed(TUniqueId query_id) {
+    return 0x66bd68df22c3ef37 ^ query_id.hi;
   }
 
   void CheckSenders() {
@@ -583,6 +600,9 @@ class DataStreamTest : public testing::Test {
     CheckSenders();
     JoinReceivers();
     CheckReceivers(stream_type, num_senders);
+    if (stream_type == TPartitionType::HASH_PARTITIONED) {
+      CheckHashPartitionedReceivers(stream_type);
+    }
   }
 };
 
