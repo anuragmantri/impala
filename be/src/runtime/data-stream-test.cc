@@ -474,6 +474,7 @@ class DataStreamTest : public testing::Test {
           uint64_t hash_val = RawValue::GetHashValueFastHash(&value, TYPE_BIGINT,
               GetExchangeHashSeed(runtime_state_->query_id()));
           EXPECT_EQ(hash_val % receiver_info_.size(), info->receiver_num);
+
           uint64_t hash_val_2 = RawValue::GetHashValueFastHash(&value, TYPE_BIGINT,
               GetExchangeHashSeed(UuidToQueryId(random_generator()())));
           EXPECT_NE(hash_val_2 % receiver_info_.size(), info->receiver_num);
@@ -720,6 +721,22 @@ TEST_F(DataStreamTestShortDeserQueue, TestNoDeadlock) {
   // Check that 4 payloads have been received.
   CheckReceivers(TPartitionType::UNPARTITIONED, 4);
 }
+
+//TEST_F(DataStreamTest, TestHashPartitioned) {
+//  int num_receivers = 4;
+//  TUniqueId instance_id;
+//  GetNextInstanceId(&instance_id);
+//
+//  StartSender(TPartitionType::HASH_PARTITIONED, 8);
+//
+//  // Start a few recievers
+//  for (int i = 0; i < num_receivers; ++i) {
+//    StartReceiver(TPartitionType::HASH_PARTITIONED, 1, i, 8, false);
+//  }
+//  JoinSenders();
+//  CheckSenders();
+//
+//}
 
 // Test that payloads larger than the service queue's soft mem limit can be transmitted.
 TEST_F(DataStreamTestShortServiceQueue, TestLargePayload) {
