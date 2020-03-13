@@ -830,14 +830,8 @@ Status KrpcDataStreamSenderConfig::CodegenHashRow(
   llvm::Value* row_arg = args[1];
 
   // Store the initial seed to hash_val
-<<<<<<< HEAD
   llvm::Value* hash_val =
       codegen->GetI64Constant(KrpcDataStreamSender::EXCHANGE_HASH_SEED);
-||||||| merged common ancestors
-  llvm::Value* hash_val = codegen->GetI64Constant(EXCHANGE_HASH_SEED);
-=======
-  llvm::Value* hash_val = codegen->GetI64Constant(exchange_hash_seed_);
->>>>>>> Initial change.
 
   // Unroll the loop and codegen each of the partition expressions
   for (int i = 0; i < partition_exprs_.size(); ++i) {
