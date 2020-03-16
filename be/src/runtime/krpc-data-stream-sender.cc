@@ -734,7 +734,7 @@ KrpcDataStreamSender::KrpcDataStreamSender(TDataSinkId sink_id, int sender_id,
     // Randomize the order we open/transmit to channels to avoid thundering herd problems.
     random_shuffle(channels_.begin(), channels_.end());
   }
-  exchange_hash_seed_ = 0x66bd68df22c3ef37 ^ state->query_id().hi;
+  EXCHANGE_HASH_SEED = 0x66bd68df22c3ef37 ^ state->query_id().hi;
 }
 
 KrpcDataStreamSender::~KrpcDataStreamSender() {
@@ -973,7 +973,7 @@ Status KrpcDataStreamSender::AddRowToChannel(const int channel_id, TupleRow* row
 }
 
 uint64_t KrpcDataStreamSender::HashRow(TupleRow* row) {
-  uint64_t hash_val = exchange_hash_seed_;
+  uint64_t hash_val = EXCHANGE_HASH_SEED;
   for (ScalarExprEvaluator* eval : partition_expr_evals_) {
     void* partition_val = eval->GetValue(row);
     // We can't use the crc hash function here because it does not result in

@@ -140,7 +140,7 @@ class KrpcDataStreamSender : public DataSink {
   static const char* HASH_ROW_SYMBOL;
 
   /// An arbitrary hash seed used for exchanges.
-  static constexpr uint64_t EXCHANGE_HASH_SEED = 0x66bd68df22c3ef37;
+  static uint64_t EXCHANGE_HASH_SEED;
 
   static const char* LLVM_CLASS_NAME;
 
@@ -266,9 +266,6 @@ class KrpcDataStreamSender : public DataSink {
   /// NULL if codegen is disabled or failed.
   typedef Status (*HashAndAddRowsFn)(KrpcDataStreamSender*, RowBatch* row);
   HashAndAddRowsFn hash_and_add_rows_fn_ = nullptr;
-
-  /// An arbitrary hash seed used for exchanges.
-  uint64_t exchange_hash_seed_;
 };
 
 } // namespace impala
