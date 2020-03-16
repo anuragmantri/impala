@@ -685,51 +685,51 @@ TEST_F(DataStreamTest, BasicTest) {
   }
 }
 
-TEST_F(DataStreamTest, HashPartitionTest) {
-  int num_senders = 1;
-  int num_receivers = 4;
-  int buffer_size = 1024;
-  bool merging = false;
-  bool result = false;
-
-  Reset();
-  for (int i = 0; i < num_receivers; ++i) {
-    StartReceiver(TPartitionType::HASH_PARTITIONED, num_senders, i, buffer_size, merging);
-  }
-  for (int i = 0; i < num_senders; ++i) {
-    StartSender(TPartitionType::HASH_PARTITIONED, buffer_size);
-  }
-  JoinSenders();
-  CheckSenders();
-  JoinReceivers();
-  unordered_map<int, multiset<int64_t>> map_query_1 = checkHashPartitionedReceivers(
-      num_senders);
-
-  // Run with a different query id and verify that the hash partitioning is different.
-  Reset();
-  for (int i = 0; i < num_receivers; ++i) {
-    StartReceiver(TPartitionType::HASH_PARTITIONED, num_senders, i, buffer_size, merging);
-  }
-  for (int i = 0; i < num_senders; ++i) {
-    StartSender(TPartitionType::HASH_PARTITIONED, buffer_size);
-  }
-  JoinSenders();
-  CheckSenders();
-  JoinReceivers();
-  unordered_map<int, multiset<int64_t>> map_query_2 = checkHashPartitionedReceivers(
-      num_senders);
-
-  // Check the sizes of the receiver data values in each receiver is different.
-  for (int i = 0; i<num_receivers; ++i) {
-    // Compare the data values in the recievers for the two queries. Verify the values
-    // don't match for at one reciever.
-    if (map_query_1[i] != map_query_2[i]) {
-      result = true;
-      break;
-    }
-  }
-  ASSERT_EQ(result, true);
-}
+//TEST_F(DataStreamTest, HashPartitionTest) {
+//  int num_senders = 1;
+//  int num_receivers = 4;
+//  int buffer_size = 1024;
+//  bool merging = false;
+//  bool result = false;
+//
+//  Reset();
+//  for (int i = 0; i < num_receivers; ++i) {
+//    StartReceiver(TPartitionType::HASH_PARTITIONED, num_senders, i, buffer_size, merging);
+//  }
+//  for (int i = 0; i < num_senders; ++i) {
+//    StartSender(TPartitionType::HASH_PARTITIONED, buffer_size);
+//  }
+//  JoinSenders();
+//  CheckSenders();
+//  JoinReceivers();
+//  unordered_map<int, multiset<int64_t>> map_query_1 = checkHashPartitionedReceivers(
+//      num_senders);
+//
+//  // Run with a different query id and verify that the hash partitioning is different.
+//  Reset();
+//  for (int i = 0; i < num_receivers; ++i) {
+//    StartReceiver(TPartitionType::HASH_PARTITIONED, num_senders, i, buffer_size, merging);
+//  }
+//  for (int i = 0; i < num_senders; ++i) {
+//    StartSender(TPartitionType::HASH_PARTITIONED, buffer_size);
+//  }
+//  JoinSenders();
+//  CheckSenders();
+//  JoinReceivers();
+//  unordered_map<int, multiset<int64_t>> map_query_2 = checkHashPartitionedReceivers(
+//      num_senders);
+//
+//  // Check the sizes of the receiver data values in each receiver is different.
+//  for (int i = 0; i<num_receivers; ++i) {
+//    // Compare the data values in the recievers for the two queries. Verify the values
+//    // don't match for at one reciever.
+//    if (map_query_1[i] != map_query_2[i]) {
+//      result = true;
+//      break;
+//    }
+//  }
+//  ASSERT_EQ(result, true);
+//}
 
 // This test is to exercise a previously present deadlock path which is now fixed, to
 // ensure that the deadlock does not happen anymore. It does this by doing the following:
