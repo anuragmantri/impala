@@ -501,7 +501,6 @@ class DataStreamTest : public testing::Test {
       multiset<int64_t> data_set = receiver_data_map[info->receiver_num];
       for (multiset<int64_t>::iterator j = info->data_values.begin();
            j != info->data_values.end(); ++j) {
-         cout << "Data:" << *j <<", Num: " << info->receiver_num << endl;
          data_set.insert(*j);
       }
     }
