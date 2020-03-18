@@ -497,14 +497,19 @@ class DataStreamTest : public testing::Test {
     for (int i = 0; i < receiver_info_.size(); i++) {
       // Store a map of receiver and list of it's
       ReceiverInfo* info = receiver_info_[i].get();
-      receiver_data_map[info->receiver_num].insert(
-          info->data_values.begin(), info->data_values.end());
+      cout << "ANURAG: " <<info->data_values.size();
+      multiset<int64_t> data_set = receiver_data_map[info->receiver_num];
+      for (multiset<int64_t>::iterator j = info->data_values.begin();
+           j != info->data_values.end(); ++j) {
+         cout << "Data:" << *j <<", Num: " << info->receiver_num << endl;
+         data_set.insert(*j);
+      }
     }
     return receiver_data_map;
   }
 
   uint64_t GetExchangeHashSeed(TUniqueId query_id) {
-    return 0x66bd68df22c3ef37 ^ query_id.hi;
+    return 0x66bd68df22c3ef37; // ^ query_id.hi;
   }
 
   void CheckSenders() {
@@ -685,51 +690,52 @@ TEST_F(DataStreamTest, BasicTest) {
   }
 }
 
-//TEST_F(DataStreamTest, HashPartitionTest) {
-//  int num_senders = 1;
-//  int num_receivers = 4;
-//  int buffer_size = 1024;
-//  bool merging = false;
-//  bool result = false;
-//
-//  Reset();
-//  for (int i = 0; i < num_receivers; ++i) {
-//    StartReceiver(TPartitionType::HASH_PARTITIONED, num_senders, i, buffer_size, merging);
-//  }
-//  for (int i = 0; i < num_senders; ++i) {
-//    StartSender(TPartitionType::HASH_PARTITIONED, buffer_size);
-//  }
-//  JoinSenders();
-//  CheckSenders();
-//  JoinReceivers();
-//  unordered_map<int, multiset<int64_t>> map_query_1 = checkHashPartitionedReceivers(
-//      num_senders);
-//
-//  // Run with a different query id and verify that the hash partitioning is different.
-//  Reset();
-//  for (int i = 0; i < num_receivers; ++i) {
-//    StartReceiver(TPartitionType::HASH_PARTITIONED, num_senders, i, buffer_size, merging);
-//  }
-//  for (int i = 0; i < num_senders; ++i) {
-//    StartSender(TPartitionType::HASH_PARTITIONED, buffer_size);
-//  }
-//  JoinSenders();
-//  CheckSenders();
-//  JoinReceivers();
-//  unordered_map<int, multiset<int64_t>> map_query_2 = checkHashPartitionedReceivers(
-//      num_senders);
-//
-//  // Check the sizes of the receiver data values in each receiver is different.
-//  for (int i = 0; i<num_receivers; ++i) {
-//    // Compare the data values in the recievers for the two queries. Verify the values
-//    // don't match for at one reciever.
-//    if (map_query_1[i] != map_query_2[i]) {
-//      result = true;
-//      break;
-//    }
-//  }
-//  ASSERT_EQ(result, true);
-//}
+TEST_F(DataStreamTest, HashPartitionTest) {
+  int num_senders = 1;
+  int num_receivers = 4;
+  int buffer_size = 1024;
+  bool merging = false;
+  bool result = false;
+
+  Reset();
+  for (int i = 0; i < num_receivers; ++i) {
+    StartReceiver(TPartitionType::HASH_PARTITIONED, num_senders, i, buffer_size, merging);
+  }
+  for (int i = 0; i < num_senders; ++i) {
+    StartSender(TPartitionType::HASH_PARTITIONED, buffer_size);
+  }
+  JoinSenders();
+  CheckSenders();
+  JoinReceivers();
+  unordered_map<int, multiset<int64_t>> map_query_1 = checkHashPartitionedReceivers(
+      num_senders);
+
+
+  // Run with a different query id and verify that the hash partitioning is different.
+  Reset();
+  for (int i = 0; i < num_receivers; ++i) {
+    StartReceiver(TPartitionType::HASH_PARTITIONED, num_senders, i, buffer_size, merging);
+  }
+  for (int i = 0; i < num_senders; ++i) {
+    StartSender(TPartitionType::HASH_PARTITIONED, buffer_size);
+  }
+  JoinSenders();
+  CheckSenders();
+  JoinReceivers();
+  unordered_map<int, multiset<int64_t>> map_query_2 = checkHashPartitionedReceivers(
+      num_senders);
+
+  // Check the sizes of the receiver data values in each receiver is different.
+  for (int i = 0; i<num_receivers; ++i) {
+    // Compare the data values in the recievers for the two queries. Verify the values
+    // don't match for at one reciever.
+    if (map_query_1[i] != map_query_2[i]) {
+      result = true;
+      break;
+    }
+  }
+  ASSERT_EQ(result, true);
+}
 
 // This test is to exercise a previously present deadlock path which is now fixed, to
 // ensure that the deadlock does not happen anymore. It does this by doing the following:
@@ -775,22 +781,6 @@ TEST_F(DataStreamTestShortDeserQueue, TestNoDeadlock) {
   // Check that 4 payloads have been received.
   CheckReceivers(TPartitionType::UNPARTITIONED, 4);
 }
-
-//TEST_F(DataStreamTest, TestHashPartitioned) {
-//  int num_receivers = 4;
-//  TUniqueId instance_id;
-//  GetNextInstanceId(&instance_id);
-//
-//  StartSender(TPartitionType::HASH_PARTITIONED, 8);
-//
-//  // Start a few recievers
-//  for (int i = 0; i < num_receivers; ++i) {
-//    StartReceiver(TPartitionType::HASH_PARTITIONED, 1, i, 8, false);
-//  }
-//  JoinSenders();
-//  CheckSenders();
-//
-//}
 
 // Test that payloads larger than the service queue's soft mem limit can be transmitted.
 TEST_F(DataStreamTestShortServiceQueue, TestLargePayload) {

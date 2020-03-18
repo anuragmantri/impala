@@ -80,7 +80,7 @@ Status KrpcDataStreamSenderConfig::Init(
   RETURN_IF_ERROR(DataSinkConfig::Init(tsink, input_row_desc, state));
   DCHECK(tsink_->__isset.stream_sink);
   auto& partition_type = tsink_->stream_sink.output_partition.type;
-  exchange_hash_seed_ = 0x66bd68df22c3ef37 ^ state->query_id().hi;
+  exchange_hash_seed_ = 0x66bd68df22c3ef37; //^ state->query_id().hi;
   if (partition_type == TPartitionType::HASH_PARTITIONED
       || partition_type == TPartitionType::KUDU) {
     RETURN_IF_ERROR(
