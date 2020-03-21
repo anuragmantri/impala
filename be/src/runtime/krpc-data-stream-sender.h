@@ -142,6 +142,9 @@ class KrpcDataStreamSender : public DataSink {
   /// KrpcDataStreamSender::HashRow() symbol. Used for call-site replacement.
   static const char* HASH_ROW_SYMBOL;
 
+  /// An arbitrary constant used to seed the hash.
+  static constexpr uint64_t EXCHANGE_HASH_SEED_CONST = 0x66bd68df22c3ef37;
+
   static const char* LLVM_CLASS_NAME;
 
  protected:

@@ -85,7 +85,8 @@ Status KrpcDataStreamSenderConfig::Init(
     RETURN_IF_ERROR(
         ScalarExpr::Create(tsink_->stream_sink.output_partition.partition_exprs,
             *input_row_desc_, state, &partition_exprs_));
-    exchange_hash_seed_ = 0x66bd68df22c3ef37 ^ state->query_id().hi;
+    exchange_hash_seed_ =
+        KrpcDataStreamSender::EXCHANGE_HASH_SEED_CONST ^ state->query_id().hi;
   }
   return Status::OK();
 }

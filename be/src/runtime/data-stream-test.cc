@@ -493,8 +493,26 @@ class DataStreamTest : public testing::Test {
   }
 
   // Returns a map of reciever to all it's data values.
-  unordered_map<int, multiset<int64_t>> checkHashPartitionedReceivers(int num_senders) {
-    unordered_map<int, multiset<int64_t>> receiver_data_map;
+  unordered_map<int, multiset<int64_t>> GetHashPartitionedReceiversDataMap(
+      unordered_map<int, multiset<int64_t>>& receiver_data_map, int num_receivers,
+      bool reset_hash_seed) {
+    int num_senders = 1;
+    int buffer_size = 1024;
+    bool merging = false;
+
+    Reset();
+    for (int i = 0; i < num_receivers; ++i) {
+      StartReceiver(TPartitionType::HASH_PARTITIONED, num_senders, i,
+          buffer_size, merging);
+    }
+    for (int i = 0; i < num_senders; ++i) {
+      StartSender(TPartitionType::HASH_PARTITIONED, buffer_size,
+          reset_hash_seed);
+    }
+    JoinSenders();
+    CheckSenders();
+    JoinReceivers();
+
     for (int i = 0; i < receiver_info_.size(); i++) {
       // Store a map of receiver and list of it's data values.
       ReceiverInfo* info = receiver_info_[i].get();
@@ -512,6 +530,7 @@ class DataStreamTest : public testing::Test {
   uint64_t GetExchangeHashSeed(TUniqueId query_id) {
     return 0x66bd68df22c3ef37 ^ query_id.hi;
   }
+
   void CheckSenders() {
     for (int i = 0; i < sender_info_.size(); ++i) {
       EXPECT_OK(sender_info_[i]->status);
@@ -702,38 +721,14 @@ TEST_F(DataStreamTest, BasicTest) {
 
 // Test streams with different query ids should hash to different destinations.
 TEST_F(DataStreamTest, HashPartitionTest) {
-  int num_senders = 1;
-  int num_receivers = 4;
-  int buffer_size = 1024;
-  bool merging = false;
   bool result = false;
+  int num_receivers = 4;
 
-  Reset();
-  for (int i = 0; i < num_receivers; ++i) {
-    StartReceiver(TPartitionType::HASH_PARTITIONED, num_senders, i, buffer_size, merging);
-  }
-  for (int i = 0; i < num_senders; ++i) {
-    StartSender(TPartitionType::HASH_PARTITIONED, buffer_size);
-  }
-  JoinSenders();
-  CheckSenders();
-  JoinReceivers();
-  unordered_map<int, multiset<int64_t>> map_query_1 =
-      checkHashPartitionedReceivers(num_senders);
+  unordered_map<int, multiset<int64_t>> map_query_1;
+  GetHashPartitionedReceiversDataMap(map_query_1, num_receivers, false);
 
-  // Reset the query id and verify that the data values at destination are different.
-  Reset();
-  for (int i = 0; i < num_receivers; ++i) {
-    StartReceiver(TPartitionType::HASH_PARTITIONED, num_senders, i, buffer_size, merging);
-  }
-  for (int i = 0; i < num_senders; ++i) {
-    StartSender(TPartitionType::HASH_PARTITIONED, buffer_size, true);
-  }
-  JoinSenders();
-  CheckSenders();
-  JoinReceivers();
-  unordered_map<int, multiset<int64_t>> map_query_2 =
-      checkHashPartitionedReceivers(num_senders);
+  unordered_map<int, multiset<int64_t>> map_query_2;
+  GetHashPartitionedReceiversDataMap(map_query_1, num_receivers, true);
 
   // Check the sizes of the receiver data values in each receiver is different.
   for (int i = 0; i < num_receivers; ++i) {
