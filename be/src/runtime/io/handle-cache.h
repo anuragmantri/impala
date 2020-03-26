@@ -20,6 +20,7 @@
 #include <array>
 #include <list>
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <mutex>
 
@@ -149,11 +150,21 @@ class FileHandleCache {
 
  private:
   struct FileHandleEntry;
-  typedef std::multimap<std::string, FileHandleEntry> MapType;
+  typedef std::list<FileHandleEntry> FileHandleListType;
+
+  /// This contains any structures related to an individia; file.
+  struct FileHandleStruct {
+    /// List of file handles for given list.
+    FileHandleListType fh_list;
+  };
+
+  typedef std::unordered_map<std::string, FileHandleStruct> MapType;
 
   struct LruListEntry {
-    LruListEntry(typename MapType::iterator map_entry_in);
+    LruListEntry(typename MapType::iterator map_entry_in, typename FileHandleListType
+    ::iterator list_entry);
     typename MapType::iterator map_entry;
+    typename FileHandleListType::iterator list_entry;
     uint64_t timestamp_seconds;
   };
   typedef std::list<LruListEntry> LruListType;

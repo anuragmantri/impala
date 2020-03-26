@@ -74,8 +74,10 @@ FileHandleCache::FileHandleCache(size_t capacity,
 }
 
 FileHandleCache::LruListEntry::LruListEntry(
-    typename MapType::iterator map_entry_in)
-     : map_entry(map_entry_in), timestamp_seconds(MonotonicSeconds()) {}
+    typename MapType::iterator map_entry_in, typename FileHandleListType
+        ::iterator list_entry)
+     : map_entry(map_entry_in), list_entry(list_entry), timestamp_seconds(
+         MonotonicSeconds()) {}
 
 FileHandleCache::~FileHandleCache() {
   shut_down_promise_.Set(true);
@@ -99,31 +101,35 @@ Status FileHandleCache::GetFileHandle(
   // find an unused entry with the same mtime
   if (!require_new_handle) {
     std::lock_guard<SpinLock> g(p.lock);
-    pair<typename MapType::iterator, typename MapType::iterator> range =
-      p.cache.equal_range(*fname);
+    typename MapType::iterator map_it = p.cache.find(*fname);
 
-    // When picking a cached entry, always follow the ordering of the map and
-    // pick earlier entries first. This allows excessive entries for a file
-    // to age out. For example, if there are three entries for a file and only
-    // one is used at a time, only the first will be used and the other two
-    // can age out.
-    while (range.first != range.second) {
-      FileHandleEntry* elem = &range.first->second;
-      DCHECK(elem->fh.get() != nullptr);
-      if (!elem->in_use && elem->fh->mtime() == mtime) {
-        // This element is currently in the lru_list, which means that lru_entry must
-        // be an iterator pointing into the lru_list.
-        DCHECK(elem->lru_entry != p.lru_list.end());
-        // Remove the element from the lru_list and designate that it is not on
-        // the lru_list by resetting its iterator to point to the end of the list.
-        p.lru_list.erase(elem->lru_entry);
-        elem->lru_entry = p.lru_list.end();
-        *cache_hit = true;
-        elem->in_use = true;
-        *handle_out = elem->fh.get();
-        return Status::OK();
+    // When picking a cached entry, always pick earlier entries first. This allows
+    // excessive entries for a file to age out. For example, if there are three entries
+    // for a file and only one is used at a time, only the first will be used and the
+    // other two can age out.
+    if (map_it != p.cache.end()) {
+      for (auto fh_entry = map_it->second.fh_list.begin();
+          fh_entry != map_it->second.fh_list.end(); ++fh_entry) {
+        DCHECK(fh_entry->fh.get() != nullptr);
+        if (!fh_entry->in_use && fh_entry->fh->mtime() == mtime) {
+          // This element is currently in the lru_list, which means that lru_entry must
+          // be an iterator pointing into the lru_list.
+          DCHECK(fh_entry->lru_entry != p.lru_list.end());
+          // Remove the element from the lru_list and designate that it is not on
+          // the lru_list by resetting its iterator to point to the end of the list.
+          p.lru_list.erase(fh_entry->lru_entry);
+          fh_entry->lru_entry = p.lru_list.end();
+          *cache_hit = true;
+          fh_entry->in_use = true;
+          *handle_out = fh_entry->fh.get();
+          return Status::OK();
+        }
       }
-      ++range.first;
+    } else {
+      // There is no entry for this file name in the map. Create a new list and add it to
+      // the file name in the map.
+      // FileHandleStruct fh_struct;
+      p.cache.emplace(std::make_pair(*fname, FileHandleStruct()));
     }
   }
 
@@ -138,18 +144,16 @@ Status FileHandleCache::GetFileHandle(
 
   // Get the lock and create/move the new entry into the map
   // This entry is new and will be immediately used. Place it as the first entry
-  // for this file in the multimap. The ordering is largely unimportant if all the
+  // for this file in the list. The ordering is largely unimportant if all the
   // existing entries are in use. However, if require_new_handle is true, there may be
   // unused entries, so it would make more sense to insert the new entry at the front.
   std::lock_guard<SpinLock> g(p.lock);
-  pair<typename MapType::iterator, typename MapType::iterator> range =
-      p.cache.equal_range(*fname);
   FileHandleEntry entry(std::move(new_fh), p.lru_list);
-  typename MapType::iterator new_it = p.cache.emplace_hint(range.first,
-      *fname, std::move(entry));
+  typename MapType::iterator new_it = p.cache.find(*fname);
+  new_it->second.fh_list.emplace_front(std::move(entry));
   ++p.size;
   if (p.size > p.capacity) EvictHandles(p);
-  FileHandleEntry* new_elem = &new_it->second;
+  FileHandleEntry* new_elem = &(new_it->second.fh_list.front());
   DCHECK(!new_elem->in_use);
   new_elem->in_use = true;
   *handle_out = new_elem->fh.get();
@@ -163,26 +167,25 @@ void FileHandleCache::ReleaseFileHandle(std::string* fname,
   int index = HashUtil::Hash(fname->data(), fname->size(), 0) % cache_partitions_.size();
   FileHandleCachePartition& p = cache_partitions_[index];
   std::lock_guard<SpinLock> g(p.lock);
-  pair<typename MapType::iterator, typename MapType::iterator> range =
-    p.cache.equal_range(*fname);
+  typename MapType::iterator map_it = p.cache.find(*fname);
 
+  // Search in the list of file handles for this file.
   // TODO: This can be optimized by maintaining some state in the file handle about
   // its location in the map.
-  typename MapType::iterator release_it = range.first;
-  while (release_it != range.second) {
-    FileHandleEntry* elem = &release_it->second;
-    if (elem->fh.get() == fh) break;
-    ++release_it;
+  typename FileHandleListType::iterator fh_entry_it;
+  for (fh_entry_it = map_it->second.fh_list.begin();
+       fh_entry_it != map_it->second.fh_list.end(); ++fh_entry_it) {
+    if (fh_entry_it->fh.get() == fh) break;
   }
-  DCHECK(release_it != range.second);
+  DCHECK(fh_entry_it != map_it->second.fh_list.end());
 
   // This file handle is no longer referenced
-  FileHandleEntry* release_elem = &release_it->second;
+  FileHandleEntry* release_elem = &(*fh_entry_it);
   DCHECK(release_elem->in_use);
   release_elem->in_use = false;
   if (destroy_handle) {
     --p.size;
-    p.cache.erase(release_it);
+    map_it->second.fh_list.remove(std::move(*release_elem));
     return;
   }
   // Hdfs can use some memory for readahead buffering. Calling unbuffer reduces
@@ -198,13 +201,15 @@ void FileHandleCache::ReleaseFileHandle(std::string* fname,
     // The FileHandleEntry has an iterator to the LruListEntry and the
     // LruListEntry has an iterator to the location of the FileHandleEntry in
     // the cache.
-    release_elem->lru_entry = p.lru_list.emplace(p.lru_list.end(), release_it);
+
+    release_elem->lru_entry = p.lru_list.emplace(p.lru_list.end(), LruListEntry(
+        map_it, fh_entry_it));
     if (p.size > p.capacity) EvictHandles(p);
   } else {
     VLOG_FILE << "FS does not support file handle unbuffering, closing file="
               << fname;
     --p.size;
-    p.cache.erase(release_it);
+    map_it->second.fh_list.erase(fh_entry_it);
   }
 }
 
@@ -232,7 +237,7 @@ void FileHandleCache::EvictHandles(
   while (p.lru_list.size() > 0) {
     // Peek at the oldest element
     LruListEntry oldest_entry = p.lru_list.front();
-    typename MapType::iterator oldest_entry_map_it = oldest_entry.map_entry;
+    auto oldest_entry_map_it = oldest_entry.map_entry;
     uint64_t oldest_entry_timestamp = oldest_entry.timestamp_seconds;
     // If the oldest element does not need to be aged out and the cache is not over
     // capacity, then we are done and there is nothing to evict.
@@ -241,8 +246,8 @@ void FileHandleCache::EvictHandles(
       return;
     }
     // Evict the oldest element
-    DCHECK(!oldest_entry_map_it->second.in_use);
-    p.cache.erase(oldest_entry_map_it);
+    DCHECK(!oldest_entry.list_entry->in_use);
+    oldest_entry_map_it->second.fh_list.erase(oldest_entry.list_entry);
     p.lru_list.pop_front();
     --p.size;
   }
