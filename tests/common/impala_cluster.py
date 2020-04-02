@@ -58,6 +58,7 @@ DEFAULT_STATE_STORE_SUBSCRIBER_PORT = 23000
 DEFAULT_IMPALAD_WEBSERVER_PORT = 25000
 DEFAULT_STATESTORED_WEBSERVER_PORT = 25010
 DEFAULT_CATALOGD_WEBSERVER_PORT = 25020
+DEFAULT_CATALOGD_STATESTORE_SUBSRIBER_PORT = 23020
 
 DEFAULT_IMPALAD_JVM_DEBUG_PORT = 30000
 DEFAULT_CATALOGD_JVM_DEBUG_PORT = 30030
@@ -91,13 +92,14 @@ class ImpalaCluster(object):
     Helpful to confirm that processes have been killed.
     """
     if self.docker_network is None:
-      self.__impalads, self.__statestoreds, self.__catalogd =\
+      self.__impalads, self.__statestoreds, self.__catalogds =\
           self.__build_impala_process_lists()
     else:
-      self.__impalads, self.__statestoreds, self.__catalogd =\
+      self.__impalads, self.__statestoreds, self.__catalogds =\
           self.__find_docker_containers()
     LOG.debug("Found %d impalad/%d statestored/%d catalogd process(es)" %
-        (len(self.__impalads), len(self.__statestoreds), 1 if self.__catalogd else 0))
+        (len(self.__impalads), len(self.__statestoreds),
+         len(self.__catalogds)))
 
   @property
   def statestored(self):
@@ -118,7 +120,7 @@ class ImpalaCluster(object):
   @property
   def catalogd(self):
     """Returns the catalogd process, or None if no catalogd process was found"""
-    return self.__catalogd
+    return self.__catalogds
 
   def get_first_impalad(self):
     return self.impalads[0]
@@ -150,7 +152,8 @@ class ImpalaCluster(object):
         client.close()
     return n
 
-  def wait_until_ready(self, expected_num_impalads=1, expected_num_ready_impalads=None):
+  def wait_until_ready(self, expected_num_impalads=1,
+      expected_num_ready_impalads=None, expected_num_catalogs = None):
     """Waits for this 'cluster' to be ready to submit queries.
 
       A cluster is deemed "ready" if:
@@ -163,11 +166,14 @@ class ImpalaCluster(object):
       This information is retrieved by querying the statestore debug webpage
       and each individual impalad's metrics webpage.
     """
-    self.wait_for_num_impalads(expected_num_impalads)
+    self.wait_for_num_impalads(expected_num_impalads, expected_num_catalogs)
 
     # TODO: fix this for coordinator-only nodes as well.
     if expected_num_ready_impalads is None:
       expected_num_ready_impalads = len(self.impalads)
+
+    if expected_num_catalogs is None:
+      expected_num_catalogs = len(self.catalogd)
 
     def check_processes_still_running():
       """Check that the processes we waited for above (i.e. impalads, statestored,
@@ -177,7 +183,7 @@ class ImpalaCluster(object):
       # process to write a minidump.
       assert len(self.impalads) >= expected_num_impalads
       assert self.statestored is not None
-      assert self.catalogd is not None
+      assert self.catalogd >= expected_num_catalogs
 
 
     for impalad in self.impalads:
@@ -188,7 +194,7 @@ class ImpalaCluster(object):
          impalad._get_arg_value("stress_catalog_init_delay_ms", default=0) == 0):
         impalad.wait_for_catalog()
 
-  def wait_for_num_impalads(self, num_impalads, retries=10):
+  def wait_for_num_impalads(self, num_impalads, num_catalogs, retries=10):
     """Checks that at least 'num_impalads' impalad processes are running, along with
     the statestored and catalogd.
 
@@ -197,7 +203,7 @@ class ImpalaCluster(object):
     RuntimeError.
     """
     for i in range(retries):
-      if len(self.impalads) < num_impalads or not self.statestored or not self.catalogd:
+      if len(self.impalads) < num_impalads or not self.statestored or len(self.catalogd) < num_catalogs:
         sleep(1)
         self.refresh()
     msg = ""
@@ -206,8 +212,10 @@ class ImpalaCluster(object):
           expected_num=num_impalads, actual_num=len(self.impalads))
     if not self.statestored:
       msg += "statestored failed to start.\n"
-    if not self.catalogd:
-      msg += "catalogd failed to start.\n"
+    if len(self.catalogd) < num_catalogs:
+      msg += "Expected {expected_num} catalogd(s), only {actual_num} " \
+             "found\n".format(
+          expected_num=num_catalogs, actual_num=len(self.catalogd))
     if msg:
       raise RuntimeError(msg)
 
@@ -220,7 +228,7 @@ class ImpalaCluster(object):
     """
     impalads = list()
     statestored = list()
-    catalogd = None
+    catalogd = list()
     for binary, process in find_user_processes(['impalad', 'catalogd', 'statestored']):
       # IMPALA-6889: When a process shuts down and becomes a zombie its cmdline becomes
       # empty for a brief moment, before it gets reaped by its parent (see man proc). We
@@ -240,8 +248,7 @@ class ImpalaCluster(object):
       elif binary == 'statestored':
         statestored.append(StateStoreProcess(cmdline))
       elif binary == 'catalogd':
-        catalogd = CatalogdProcess(cmdline)
-
+        catalogd.append(CatalogdProcess(cmdline))
     self.__sort_impalads(impalads)
     return impalads, statestored, catalogd
 

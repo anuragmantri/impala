@@ -157,4 +157,6 @@ struct TBackendGflags {
   66: required bool enable_column_masking
 
   67: required bool enable_insert_events
+
+  68: required i32 num_catalogs
 }

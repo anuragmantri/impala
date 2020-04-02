@@ -27,6 +27,7 @@
 #include "gen-cpp/Frontend_types.h"
 #include "gen-cpp/Types_types.h"
 #include "catalog/catalog.h"
+#include "catalog/leader-election-mgr.h"
 #include "statestore/statestore-subscriber.h"
 #include "util/condition-variable.h"
 #include "util/metrics-fwd.h"
@@ -128,6 +129,13 @@ class CatalogServer {
   /// catalog_update_gathering_thread_ and protected by catalog_lock_.
   int64_t catalog_objects_max_version_;
 
+  /// If there are multiple catalogs, wakes once every 5s to renew lease.
+  std::unique_ptr<Thread> leader_election_thread_;
+
+  boost::scoped_ptr<LeaderElectionMgr> leader_election_mgr_;
+
+  bool is_leader_catalog_ = false;
+
   /// Called during each Statestore heartbeat and is responsible for updating the current
   /// set of catalog objects in the IMPALA_CATALOG_TOPIC. Responds to each heartbeat with a
   /// delta update containing the set of changes since the last heartbeat. This function
@@ -150,6 +158,8 @@ class CatalogServer {
 
   /// Executed by the catalog_metrics_refresh_thread_. Refreshes certain catalog metrics.
   [[noreturn]] void RefreshMetrics();
+
+  [[noreturn]] void LeaderElectionThread();
 
   /// Example output:
   /// "databases": [
@@ -236,6 +246,12 @@ class CatalogServer {
   // metastore event processor metrics and adds it to the document
   void EventMetricsUrlCallback(
       const Webserver::WebRequest& req, rapidjson::Document* document);
+
+  /// Returns true if there are multiple catalogs in the cluster. If true, we have to
+  // initialize leader election manager.
+  bool IsLeaderElectionRequired();
+
+  Status InitLeaderElection() WARN_UNUSED_RESULT;
 };
 
 }

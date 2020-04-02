@@ -23,7 +23,7 @@ add_library(Catalog
   catalog-server.cc
   catalog-util.cc
   catalogd-main.cc
-)
+  leader-election-mgr.cc)
 add_dependencies(Catalog gen-deps)
 
 add_library(CatalogTests STATIC

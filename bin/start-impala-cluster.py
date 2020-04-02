@@ -40,7 +40,8 @@ from tests.common.impala_cluster import (ImpalaCluster, DEFAULT_BEESWAX_PORT,
     DEFAULT_STATE_STORE_SUBSCRIBER_PORT, DEFAULT_IMPALAD_WEBSERVER_PORT,
     DEFAULT_STATESTORED_WEBSERVER_PORT, DEFAULT_CATALOGD_WEBSERVER_PORT,
     DEFAULT_CATALOGD_JVM_DEBUG_PORT, DEFAULT_IMPALAD_JVM_DEBUG_PORT,
-    find_user_processes, run_daemon)
+    find_user_processes, run_daemon, DEFAULT_CATALOG_SERVICE_PORT,
+    DEFAULT_CATALOGD_STATESTORE_SUBSRIBER_PORT)
 
 logging.basicConfig(level=logging.ERROR, format="%(asctime)s %(threadName)s: %(message)s",
     datefmt="%H:%M:%S")
@@ -257,6 +258,15 @@ def impalad_service_name(i):
   else:
     return "impalad_node{node_num}".format(node_num=i)
 
+# TODO: Reuse impalad_service_name above.
+def catalogd_service_name(i):
+  """Return the name to use for the ith catalog daemon in the cluster."""
+  if i == 0:
+    # The first catalogd always logs to catalogd.INFO
+    return "catalogd"
+  else:
+    return "catalogd_node{node_num}".format(node_num=i)
+
 
 def combine_arg_list_opts(opt_args):
   """Helper for processing arguments like impalad_args. The input is a list of strings,
@@ -274,13 +284,37 @@ def build_statestored_arg_list():
       combine_arg_list_opts(options.state_store_args))
 
 
-def build_catalogd_arg_list():
-  """Build a list of command line arguments to pass to the catalogd."""
-  return (build_logging_args("catalogd") +
-      ["-kudu_master_hosts", options.kudu_master_hosts] +
-      build_kerberos_args("catalogd") +
-      combine_arg_list_opts(options.catalogd_args))
+def build_catalogd_arg_list(start_idx=0):
+  """Build argument lists for catalogs in the cluster. Returns a list of
+  argument lits, one per each catalog daemon in the cluster."""
+  catalogd_args_list = []
+  combined_catalog_args = combine_arg_list_opts(options.catalogd_args)
+  if ("--num_catalogs=2" in combined_catalog_args):
+    num_catalogs = 2
+  else:
+    num_catalogs = 1
+  # For now, all catalogds get same args.
+  # TODO: Support specifying different args for individual catalogs.
+  for i in range(start_idx, start_idx + num_catalogs):
+    catalogd_args_list.append(build_logging_args(catalogd_service_name(i)) +
+        ["-kudu_master_hosts", options.kudu_master_hosts] +
+        build_kerberos_args("catalogd") +
+        combine_arg_list_opts(options.catalogd_args) +
+        choose_catalogd_ports(i))
+  return num_catalogs, catalogd_args_list
 
+def choose_catalogd_ports(instance_num):
+  catalogd_ports = []
+  catalogd_ports.append("-catalog_service_port={catalog_service_port}".format(
+      catalog_service_port=DEFAULT_CATALOG_SERVICE_PORT + instance_num))
+  catalogd_ports.append("-webserver_port={webserver_port}".format(
+      webserver_port=DEFAULT_CATALOGD_WEBSERVER_PORT + instance_num))
+  catalogd_ports.append("-state_store_subscriber_port={"
+                        "state_store_subscriber_port}".format(
+      state_store_subscriber_port=DEFAULT_CATALOGD_STATESTORE_SUBSRIBER_PORT
+                                  + instance_num))
+
+  return catalogd_ports
 
 def build_impalad_arg_lists(cluster_size, num_coordinators, use_exclusive_coordinators,
     remap_ports, start_idx=0):
@@ -450,15 +484,18 @@ class MiniClusterOperations(object):
       raise RuntimeError("Unable to start statestored. Check log or file permissions"
                          " for more details.")
 
-  def start_catalogd(self):
-    LOG.info("Starting Catalog Service logging to {log_dir}/catalogd.INFO".format(
-        log_dir=options.log_dir))
-    output_file = os.path.join(options.log_dir, "catalogd-out.log")
-    run_daemon_with_options("catalogd", build_catalogd_arg_list(), output_file,
-        jvm_debug_port=DEFAULT_CATALOGD_JVM_DEBUG_PORT)
-    if not check_process_exists("catalogd", 10):
-      raise RuntimeError("Unable to start catalogd. Check log or file permissions"
-                         " for more details.")
+  def start_catalogd(self, start_idx=0):
+    num_catalogs, catalogd_args_lists = build_catalogd_arg_list(start_idx=start_idx)
+    assert num_catalogs == len(catalogd_args_lists)
+    for i in range (start_idx, start_idx + num_catalogs):
+      service_name = catalogd_service_name(i)
+      LOG.info("Starting Catalog Service logging to {log_dir}/{service_name}.INFO".format(
+          log_dir=options.log_dir, service_name=service_name))
+      output_file = os.path.join(
+          options.log_dir, "{service_name}-out.log".format(service_name=service_name))
+      run_daemon_with_options("catalogd", catalogd_args_lists[i - start_idx],
+          output_file, jvm_debug_port=DEFAULT_CATALOGD_JVM_DEBUG_PORT + i)
+    return num_catalogs
 
   def start_impalads(self, cluster_size, num_coordinators, use_exclusive_coordinators,
                      start_idx=0):
@@ -737,10 +774,11 @@ if __name__ == "__main__":
 
   existing_cluster_size = len(cluster_ops.get_cluster().impalads)
   expected_cluster_size = options.cluster_size
+  expected_catalog_size = 1;
   num_coordinators = options.num_coordinators
   try:
     if options.restart_catalogd_only:
-      cluster_ops.start_catalogd()
+      expected_catalog_size = cluster_ops.start_catalogd()
     elif options.restart_statestored_only:
       cluster_ops.start_statestore()
     elif options.restart_impalad_only:
@@ -754,7 +792,7 @@ if __name__ == "__main__":
       expected_cluster_size += existing_cluster_size
     else:
       cluster_ops.start_statestore()
-      cluster_ops.start_catalogd()
+      expected_catalog_size = cluster_ops.start_catalogd()
       cluster_ops.start_impalads(options.cluster_size, options.num_coordinators,
                                  options.use_exclusive_coordinators)
     # Sleep briefly to reduce log spam: the cluster takes some time to start up.
@@ -767,7 +805,7 @@ if __name__ == "__main__":
         if int(delay.strip()) != 0: expected_catalog_delays += 1
     # Check for the cluster to be ready.
     impala_cluster.wait_until_ready(expected_cluster_size,
-        expected_cluster_size - expected_catalog_delays)
+        expected_cluster_size - expected_catalog_delays, expected_catalog_size)
   except Exception, e:
     LOG.exception("Error starting cluster")
     sys.exit(1)

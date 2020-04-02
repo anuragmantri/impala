@@ -78,6 +78,7 @@ DECLARE_int32(state_store_subscriber_port);
 DECLARE_int32(state_store_port);
 DECLARE_string(hostname);
 DECLARE_bool(compact_catalog_topic);
+DECLARE_int32(num_catalogs);
 
 #ifndef NDEBUG
 DECLARE_int32(stress_catalog_startup_delay_ms);
@@ -246,6 +247,48 @@ CatalogServer::CatalogServer(MetricGroup* metrics)
       metrics->AddGauge(CATALOG_SERVER_PARTIAL_FETCH_RPC_QUEUE_LEN, 0);
 }
 
+bool CatalogServer::IsLeaderElectionRequired() {
+  return FLAGS_num_catalogs > 1;
+}
+
+Status CatalogServer::InitLeaderElection() {
+  if (!IsLeaderElectionRequired()) {
+    LOG(INFO) << "There is only one catalog. No need of leader election.";
+    return Status::OK();
+  }
+  //TODO: Pass this as a flag.
+  std::string dirName = "/home/anurag/Impala/shared_dir";
+  leader_election_mgr_.reset(new LeaderElectionMgr(dirName));
+  RETURN_IF_ERROR(leader_election_mgr_->Init(is_leader_catalog_));
+  RETURN_IF_ERROR(Thread::Create("catalog-server", "leader-election",
+      &CatalogServer::LeaderElectionThread, this, &leader_election_thread_));
+  return Status::OK();
+}
+
+[[noreturn]] void CatalogServer::LeaderElectionThread() {
+  while (true) {
+    // If it is leader then renew lease  after 3/4th of the time.
+    if (is_leader_catalog_) {
+      LOG(INFO) << "ANURAG: This is the leader catalog.";
+      int64_t sleep_for = (leader_election_mgr_->GetLeaseExpiryMs() -
+          leader_election_mgr_->GetCurrentTime()) * 3/4;
+      LOG(INFO) << "ANURAG: Leader sleeping for: " << sleep_for << " seconds.";
+      sleep(sleep_for / 1000);
+      Status status = leader_election_mgr_->RenewLease();
+      if (!status.ok()) {
+        LOG(ERROR) << "Leader lease renewal failed.";
+      }
+    } else {
+      LOG(INFO) << "ANURAG: Not the leader catalog.";
+      sleep(5);
+      Status status = leader_election_mgr_->CheckAndSetLeader(is_leader_catalog_);
+      if (!status.ok()) {
+        LOG(ERROR) << "Leader election failed.";
+      }
+    }
+  }
+}
+
 Status CatalogServer::Start() {
   TNetworkAddress subscriber_address =
       MakeNetworkAddress(FLAGS_hostname, FLAGS_state_store_subscriber_port);
@@ -261,36 +304,41 @@ Status CatalogServer::Start() {
     SleepForMs(FLAGS_stress_catalog_startup_delay_ms);
   }
 #endif
-  RETURN_IF_ERROR(Thread::Create("catalog-server", "catalog-update-gathering-thread",
-      &CatalogServer::GatherCatalogUpdatesThread, this,
-      &catalog_update_gathering_thread_));
-  RETURN_IF_ERROR(Thread::Create("catalog-server", "catalog-metrics-refresh-thread",
-      &CatalogServer::RefreshMetrics, this, &catalog_metrics_refresh_thread_));
-
-  statestore_subscriber_.reset(new StatestoreSubscriber(
-     Substitute("catalog-server@$0", TNetworkAddressToString(server_address)),
-     subscriber_address, statestore_address, metrics_));
-
-  StatestoreSubscriber::UpdateCallback cb =
-      bind<void>(mem_fn(&CatalogServer::UpdateCatalogTopicCallback), this, _1, _2);
-  // The catalogd never needs to read any entries from the topic. It only publishes
-  // entries. So, we set a prefix to some random character that we know won't be a
-  // prefix of any key. This saves a bit of network communication from the statestore
-  // back to the catalog.
-  string filter_prefix = "!";
-  Status status = statestore_subscriber_->AddTopic(IMPALA_CATALOG_TOPIC,
-      /* is_transient=*/ false, /* populate_min_subscriber_topic_version=*/ false,
-      filter_prefix, cb);
-  if (!status.ok()) {
-    status.AddDetail("CatalogService failed to start");
-    return status;
+  if (!InitLeaderElection().ok()) {
+    CLEAN_EXIT_WITH_ERROR("Aborting Catalog Server startup because there are "
+        "multiple catalogs in the cluster but leader election could not be started.");
   }
-  RETURN_IF_ERROR(statestore_subscriber_->Start());
+  if (is_leader_catalog_) {
+    RETURN_IF_ERROR(Thread::Create("catalog-server", "catalog-update-gathering-thread",
+         &CatalogServer::GatherCatalogUpdatesThread, this,
+         &catalog_update_gathering_thread_));
+    RETURN_IF_ERROR(Thread::Create("catalog-server", "catalog-metrics-refresh-thread",
+         &CatalogServer::RefreshMetrics, this, &catalog_metrics_refresh_thread_));
+    statestore_subscriber_.reset(new StatestoreSubscriber(
+        Substitute("catalog-server@$0", TNetworkAddressToString(server_address)),
+        subscriber_address, statestore_address, metrics_));
 
-  // Notify the thread to start for the first time.
-  {
-    lock_guard<mutex> l(catalog_lock_);
-    catalog_update_cv_.NotifyOne();
+    StatestoreSubscriber::UpdateCallback cb =
+        bind<void>(mem_fn(&CatalogServer::UpdateCatalogTopicCallback), this, _1, _2);
+    // The catalogd never needs to read any entries from the topic. It only publishes
+    // entries. So, we set a prefix to some random character that we know won't be a
+    // prefix of any key. This saves a bit of network communication from the statestore
+    // back to the catalog.
+    string filter_prefix = "!";
+    Status status = statestore_subscriber_->AddTopic(IMPALA_CATALOG_TOPIC,
+        /* is_transient=*/false, /* populate_min_subscriber_topic_version=*/false,
+        filter_prefix, cb);
+    if (!status.ok()) {
+      status.AddDetail("CatalogService failed to start");
+      return status;
+    }
+    RETURN_IF_ERROR(statestore_subscriber_->Start());
+
+    // Notify the thread to start for the first time.
+    {
+      lock_guard<mutex> l(catalog_lock_);
+      catalog_update_cv_.NotifyOne();
+    }
   }
   return Status::OK();
 }

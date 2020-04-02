@@ -272,6 +272,11 @@ DEFINE_bool(enable_insert_events, true,
     "clusters can be used to automatically refresh the tables or partitions. Event "
     "processing must be turned on for this flag to have any effect.");
 
+DEFINE_int32(num_catalogs, 1,
+    "Number of catalogs in the cluster. If there are more than one catalogs, a basic "
+    "form of leader election is required. Only the leader catalog will write to catalog"
+    " topics. The non-leader catalog(s) will wait for leader to fail.");
+
 DEFINE_string(blacklisted_dbs, "sys,information_schema",
     "Comma separated list for blacklisted databases. Configure which databases to be "
     "skipped for loading (in startup and global INVALIDATE METADATA). Users can't access,"
