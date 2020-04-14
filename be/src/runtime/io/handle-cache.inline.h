@@ -185,7 +185,7 @@ void FileHandleCache::ReleaseFileHandle(std::string* fname,
   release_elem->in_use = false;
   if (destroy_handle) {
     --p.size;
-    map_it->second.fh_list.remove(std::move(*release_elem));
+    map_it->second.fh_list.erase(fh_entry_it);
     return;
   }
   // Hdfs can use some memory for readahead buffering. Calling unbuffer reduces
