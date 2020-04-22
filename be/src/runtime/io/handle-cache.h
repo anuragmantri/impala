@@ -18,7 +18,7 @@
 #pragma once
 
 #include <array>
-#include <list>
+#include <boost/intrusive/list.hpp>
 #include <map>
 #include <unordered_map>
 #include <memory>
@@ -29,6 +29,8 @@
 #include "util/aligned-new.h"
 #include "util/spinlock.h"
 #include "util/thread.h"
+
+using namespace boost::intrusive;
 
 namespace impala {
 namespace io {
@@ -67,10 +69,19 @@ class HdfsFileHandle {
 
 /// CachedHdfsFileHandles are owned by the file handle cache and are used for no
 /// other purpose.
-class CachedHdfsFileHandle : public HdfsFileHandle {
+ class CachedHdfsFileHandle : public HdfsFileHandle {
  public:
   CachedHdfsFileHandle(const hdfsFS& fs, const std::string* fname, int64_t mtime);
   ~CachedHdfsFileHandle();
+
+  /// in_use is true for a file handle checked out via GetFileHandle() that has not
+  /// been returned via ReleaseFileHandle().
+  bool in_use = false;
+  uint64_t timestamp_seconds;
+
+  list_member_hook<> lru_list_hook_;
+
+  list_member_hook<> file_handle_list_hook_;
 };
 
 /// ExclusiveHdfsFileHandles are used for all purposes where a CachedHdfsFileHandle
@@ -149,40 +160,19 @@ class FileHandleCache {
       bool destroy_handle);
 
  private:
-  struct FileHandleEntry;
-  typedef std::list<FileHandleEntry> FileHandleListType;
+  typedef member_hook<CachedHdfsFileHandle, list_member_hook<>,
+      &CachedHdfsFileHandle::file_handle_list_hook_> FileHandleListHookOption;
+  typedef boost::intrusive::list<CachedHdfsFileHandle, FileHandleListHookOption>
+  FileHandleListType;
 
-  /// This contains any structures related to an individia; file.
+  typedef member_hook<CachedHdfsFileHandle,
+      list_member_hook<>, &CachedHdfsFileHandle::lru_list_hook_> LruListHookOption;
+  typedef boost::intrusive::list<CachedHdfsFileHandle, LruListHookOption> LruListType;
+
   struct FileHandleStruct {
-    /// List of file handles for given list.
     FileHandleListType fh_list;
   };
-
   typedef std::unordered_map<std::string, FileHandleStruct> MapType;
-
-  struct LruListEntry {
-    LruListEntry(typename MapType::iterator map_entry_in, typename FileHandleListType
-    ::iterator list_entry);
-    typename MapType::iterator map_entry;
-    typename FileHandleListType::iterator list_entry;
-    uint64_t timestamp_seconds;
-  };
-  typedef std::list<LruListEntry> LruListType;
-
-  struct FileHandleEntry {
-    FileHandleEntry(std::unique_ptr<CachedHdfsFileHandle> fh_in, LruListType& lru_list)
-    : fh(std::move(fh_in)), lru_entry(lru_list.end()) {}
-    std::unique_ptr<CachedHdfsFileHandle> fh;
-
-    /// in_use is true for a file handle checked out via GetFileHandle() that has not
-    /// been returned via ReleaseFileHandle().
-    bool in_use = false;
-
-    /// Iterator to this element's location in the LRU list. This only points to a
-    /// valid location when in_use is true. For error-checking, this is set to
-    /// lru_list.end() when in_use is false.
-    typename LruListType::iterator lru_entry;
-  };
 
   /// Each partition operates independently, and thus has its own cache, LRU list,
   /// and corresponding lock. To avoid contention on the lock_ due to false sharing

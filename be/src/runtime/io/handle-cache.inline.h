@@ -110,14 +110,15 @@ Status FileHandleCache::GetFileHandle(
     if (map_it != p.cache.end()) {
       for (auto fh_entry = map_it->second.fh_list.begin();
           fh_entry != map_it->second.fh_list.end(); ++fh_entry) {
-        DCHECK(fh_entry->fh.get() != nullptr);
-        if (!fh_entry->in_use && fh_entry->fh->mtime() == mtime) {
+        DCHECK(fh_entry != map_it->second.fh_list.end());
+        CachedHdfsFileHandle fh = *fh_entry;
+        if (!fh.in_use && fh.mtime() == mtime) {
           // This element is currently in the lru_list, which means that lru_entry must
           // be an iterator pointing into the lru_list.
-          DCHECK(fh_entry->lru_entry != p.lru_list.end());
+          DCHECK(fh_entry != p.lru_list.end());
           // Remove the element from the lru_list and designate that it is not on
           // the lru_list by resetting its iterator to point to the end of the list.
-          p.lru_list.erase(fh_entry->lru_entry);
+          p.lru_list.erase(fh_entry);
           fh_entry->lru_entry = p.lru_list.end();
           *cache_hit = true;
           fh_entry->in_use = true;
