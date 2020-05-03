@@ -73,12 +73,6 @@ FileHandleCache::FileHandleCache(size_t capacity,
   }
 }
 
-FileHandleCache::LruListEntry::LruListEntry(
-    typename MapType::iterator map_entry_in, typename FileHandleListType
-        ::iterator list_entry)
-     : map_entry(map_entry_in), list_entry(list_entry), timestamp_seconds(
-         MonotonicSeconds()) {}
-
 FileHandleCache::~FileHandleCache() {
   shut_down_promise_.Set(true);
   if (eviction_thread_ != nullptr) eviction_thread_->Join();
@@ -108,21 +102,20 @@ Status FileHandleCache::GetFileHandle(
     // for a file and only one is used at a time, only the first will be used and the
     // other two can age out.
     if (map_it != p.cache.end()) {
-      for (auto fh_entry = map_it->second.fh_list.begin();
-          fh_entry != map_it->second.fh_list.end(); ++fh_entry) {
-        DCHECK(fh_entry != map_it->second.fh_list.end());
-        CachedHdfsFileHandle fh = *fh_entry;
+      for (typename FileHandleListType::iterator fh_it = map_it->second.fh_list.begin();
+           fh_it != map_it->second.fh_list.end(); ++fh_it) {
+        DCHECK(fh_it != map_it->second.fh_list.end());
+        CachedHdfsFileHandle fh = *fh_it;
         if (!fh.in_use && fh.mtime() == mtime) {
           // This element is currently in the lru_list, which means that lru_entry must
           // be an iterator pointing into the lru_list.
-          DCHECK(fh_entry != p.lru_list.end());
+          DCHECK(fh_it->lru_list_hook_.is_linked());
           // Remove the element from the lru_list and designate that it is not on
           // the lru_list by resetting its iterator to point to the end of the list.
-          p.lru_list.erase(fh_entry);
-          fh_entry->lru_entry = p.lru_list.end();
+          p.lru_list.erase(p.lru_list.iterator_to(*fh_it));
           *cache_hit = true;
-          fh_entry->in_use = true;
-          *handle_out = fh_entry->fh.get();
+          fh_it->in_use = true;
+          *handle_out = &fh;
           return Status::OK();
         }
       }
@@ -139,9 +132,8 @@ Status FileHandleCache::GetFileHandle(
   // the file handle without holding the lock to reduce contention.
   *cache_hit = false;
   // Create a new file handle
-  std::unique_ptr<CachedHdfsFileHandle> new_fh;
-  new_fh.reset(new CachedHdfsFileHandle(fs, fname, mtime));
-  RETURN_IF_ERROR(new_fh->Init(hdfs_monitor_));
+  CachedHdfsFileHandle new_fh(fs, fname, mtime);
+  RETURN_IF_ERROR(new_fh.Init(hdfs_monitor_));
 
   // Get the lock and create/move the new entry into the map
   // This entry is new and will be immediately used. Place it as the first entry
@@ -149,15 +141,15 @@ Status FileHandleCache::GetFileHandle(
   // existing entries are in use. However, if require_new_handle is true, there may be
   // unused entries, so it would make more sense to insert the new entry at the front.
   std::lock_guard<SpinLock> g(p.lock);
-  FileHandleEntry entry(std::move(new_fh), p.lru_list);
   typename MapType::iterator new_it = p.cache.find(*fname);
-  new_it->second.fh_list.emplace_front(std::move(entry));
+  new_fh.fh_struct = &new_it->second;
+  new_it->second.fh_list.push_front(new_fh);
   ++p.size;
   if (p.size > p.capacity) EvictHandles(p);
-  FileHandleEntry* new_elem = &(new_it->second.fh_list.front());
+  CachedHdfsFileHandle* new_elem = &(new_it->second.fh_list.front());
   DCHECK(!new_elem->in_use);
   new_elem->in_use = true;
-  *handle_out = new_elem->fh.get();
+  *handle_out = new_elem;
   return Status::OK();
 }
 
@@ -176,12 +168,12 @@ void FileHandleCache::ReleaseFileHandle(std::string* fname,
   typename FileHandleListType::iterator fh_entry_it;
   for (fh_entry_it = map_it->second.fh_list.begin();
        fh_entry_it != map_it->second.fh_list.end(); ++fh_entry_it) {
-    if (fh_entry_it->fh.get() == fh) break;
+    if (&(*fh_entry_it) == fh) break;
   }
   DCHECK(fh_entry_it != map_it->second.fh_list.end());
 
   // This file handle is no longer referenced
-  FileHandleEntry* release_elem = &(*fh_entry_it);
+  CachedHdfsFileHandle* release_elem = &(*fh_entry_it);
   DCHECK(release_elem->in_use);
   release_elem->in_use = false;
   if (destroy_handle) {
@@ -193,18 +185,14 @@ void FileHandleCache::ReleaseFileHandle(std::string* fname,
   // this buffering so that the file handle takes up less memory when in the cache.
   // If unbuffering is not supported, then hdfsUnbufferFile() will return a non-zero
   // return code, and we close the file handle and remove it from the cache.
-  if (hdfsUnbufferFile(release_elem->fh->file()) == 0) {
+  if (hdfsUnbufferFile(release_elem->file()) == 0) {
     // This FileHandleEntry must not be in the lru list already, because it was
     // in use. Verify this by checking that the lru_entry is pointing to the end,
     // which cannot be true for any element in the lru list.
-    DCHECK(release_elem->lru_entry == p.lru_list.end());
+    DCHECK(!release_elem->lru_list_hook_.is_linked());
     // Add this to the lru list, establishing links in both directions.
-    // The FileHandleEntry has an iterator to the LruListEntry and the
-    // LruListEntry has an iterator to the location of the FileHandleEntry in
-    // the cache.
 
-    release_elem->lru_entry = p.lru_list.emplace(p.lru_list.end(), LruListEntry(
-        map_it, fh_entry_it));
+    p.lru_list.push_back(*release_elem);
     if (p.size > p.capacity) EvictHandles(p);
   } else {
     VLOG_FILE << "FS does not support file handle unbuffering, closing file="
@@ -237,9 +225,9 @@ void FileHandleCache::EvictHandles(
       now > unused_handle_timeout_secs_ ? now - unused_handle_timeout_secs_ : 0;
   while (p.lru_list.size() > 0) {
     // Peek at the oldest element
-    LruListEntry oldest_entry = p.lru_list.front();
-    auto oldest_entry_map_it = oldest_entry.map_entry;
-    uint64_t oldest_entry_timestamp = oldest_entry.timestamp_seconds;
+    CachedHdfsFileHandle oldest_fh = p.lru_list.front();
+    auto oldest_fh_struct= oldest_fh.fh_struct;
+    uint64_t oldest_entry_timestamp = oldest_fh.timestamp_seconds;
     // If the oldest element does not need to be aged out and the cache is not over
     // capacity, then we are done and there is nothing to evict.
     if (p.size <= p.capacity && (unused_handle_timeout_secs_ == 0 ||
@@ -247,8 +235,8 @@ void FileHandleCache::EvictHandles(
       return;
     }
     // Evict the oldest element
-    DCHECK(!oldest_entry.list_entry->in_use);
-    oldest_entry_map_it->second.fh_list.erase(oldest_entry.list_entry);
+    DCHECK(!oldest_fh.lru_list_hook_.is_linked());
+    oldest_fh_struct->fh_list.erase(oldest_fh_struct->fh_list.iterator_to(oldest_fh));
     p.lru_list.pop_front();
     --p.size;
   }

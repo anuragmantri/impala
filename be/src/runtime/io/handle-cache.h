@@ -30,12 +30,14 @@
 #include "util/spinlock.h"
 #include "util/thread.h"
 
-using namespace boost::intrusive;
+using boost::intrusive::member_hook;
+using boost::intrusive::list_member_hook;
 
 namespace impala {
 namespace io {
 
 class HdfsMonitor;
+struct FileHandleStruct;
 
 /// This abstract class is a small wrapper around the hdfsFile handle and the file system
 /// instance which is needed to close the file handle. The handle incorporates
@@ -77,11 +79,26 @@ class HdfsFileHandle {
   /// in_use is true for a file handle checked out via GetFileHandle() that has not
   /// been returned via ReleaseFileHandle().
   bool in_use = false;
+
   uint64_t timestamp_seconds;
 
+  /// lru_list double-link
   list_member_hook<> lru_list_hook_;
 
+  /// file_handle_list double-link.
   list_member_hook<> file_handle_list_hook_;
+
+  FileHandleStruct* fh_struct;
+};
+
+typedef member_hook<CachedHdfsFileHandle, list_member_hook<>,
+                    &CachedHdfsFileHandle::file_handle_list_hook_> FileHandleListHookOption;
+
+typedef boost::intrusive::list<CachedHdfsFileHandle, FileHandleListHookOption>
+    FileHandleListType;
+
+struct FileHandleStruct {
+  FileHandleListType fh_list;
 };
 
 /// ExclusiveHdfsFileHandles are used for all purposes where a CachedHdfsFileHandle
@@ -160,19 +177,12 @@ class FileHandleCache {
       bool destroy_handle);
 
  private:
-  typedef member_hook<CachedHdfsFileHandle, list_member_hook<>,
-      &CachedHdfsFileHandle::file_handle_list_hook_> FileHandleListHookOption;
-  typedef boost::intrusive::list<CachedHdfsFileHandle, FileHandleListHookOption>
-  FileHandleListType;
+  typedef std::unordered_map<std::string, FileHandleStruct> MapType;
 
   typedef member_hook<CachedHdfsFileHandle,
       list_member_hook<>, &CachedHdfsFileHandle::lru_list_hook_> LruListHookOption;
-  typedef boost::intrusive::list<CachedHdfsFileHandle, LruListHookOption> LruListType;
 
-  struct FileHandleStruct {
-    FileHandleListType fh_list;
-  };
-  typedef std::unordered_map<std::string, FileHandleStruct> MapType;
+  typedef boost::intrusive::list<CachedHdfsFileHandle, LruListHookOption> LruListType;
 
   /// Each partition operates independently, and thus has its own cache, LRU list,
   /// and corresponding lock. To avoid contention on the lock_ due to false sharing
