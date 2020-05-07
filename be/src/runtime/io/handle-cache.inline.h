@@ -112,7 +112,7 @@ Status FileHandleCache::GetFileHandle(
           DCHECK(fh_it->lru_list_hook_.is_linked());
           // Remove the element from the lru_list and designate that it is not on
           // the lru_list by resetting its iterator to point to the end of the list.
-          p.lru_list.erase(p.lru_list.iterator_to(*fh_it));
+          p.lru_list.erase(p.lru_list.iterator_to(fh));
           *cache_hit = true;
           fh_it->in_use = true;
           *handle_out = &fh;

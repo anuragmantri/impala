@@ -92,7 +92,7 @@ class HdfsFileHandle {
 };
 
 typedef member_hook<CachedHdfsFileHandle, list_member_hook<>,
-                    &CachedHdfsFileHandle::file_handle_list_hook_> FileHandleListHookOption;
+    &CachedHdfsFileHandle::file_handle_list_hook_> FileHandleListHookOption;
 
 typedef boost::intrusive::list<CachedHdfsFileHandle, FileHandleListHookOption>
     FileHandleListType;
