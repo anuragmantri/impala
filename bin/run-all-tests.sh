@@ -200,11 +200,18 @@ do
     if [[ "$CODE_COVERAGE" == true ]]; then
       MVN_ARGS+="-DcodeCoverage"
     fi
-    # Don't run the FE custom cluster/service tests here since they restart Impala. We'll
-    # run them with the other custom cluster/service tests below.
-    MVN_ARGS+=" -Dtest=!org.apache.impala.custom*.*Test"
-    if ! "${IMPALA_HOME}/bin/mvn-quiet.sh" -fae test ${MVN_ARGS}; then
-      TEST_RET_CODE=1
+    # Run the FE custom cluster tests only if not running against S3
+    if [[ "${TARGET_FILESYSTEM}" != "s3" ]]; then
+      MVN_ARGS+=" -Dtest=org.apache.impala.custom*.*Test"
+      if ! "${IMPALA_HOME}/bin/mvn-quiet.sh" -fae test ${MVN_ARGS}; then
+        TEST_RET_CODE=1
+      fi
+      # Restart the minicluster after running the FE custom cluster tests.
+      # TODO-MT: remove --unlock_mt_dop when it is no longer needed.
+      run-step "Starting Impala cluster" start-impala-cluster.log \
+          "${IMPALA_HOME}/bin/start-impala-cluster.py" \
+          --log_dir="${IMPALA_EE_TEST_LOGS_DIR}" ${TEST_START_CLUSTER_ARGS} \
+          --impalad_args=--unlock_mt_dop=true
     fi
     popd
   fi
@@ -250,16 +257,6 @@ do
       TEST_RET_CODE=1
     fi
     export IMPALA_MAX_LOG_FILES="${IMPALA_MAX_LOG_FILES_SAVE}"
-
-    # Run the FE custom cluster tests only if not running against S3.
-    if [[ "${TARGET_FILESYSTEM}" != "s3" ]]; then
-      pushd "${IMPALA_FE_DIR}"
-      MVN_ARGS=" -Dtest=org.apache.impala.custom*.*Test "
-      if ! "${IMPALA_HOME}/bin/mvn-quiet.sh" -fae test ${MVN_ARGS}; then
-        TEST_RET_CODE=1
-      fi
-      popd
-    fi
   fi
 
   # Run the process failure tests.
