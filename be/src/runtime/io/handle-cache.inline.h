@@ -187,11 +187,9 @@ void FileHandleCache::ReleaseFileHandle(std::string* fname,
   // return code, and we close the file handle and remove it from the cache.
   if (hdfsUnbufferFile(release_elem->file()) == 0) {
     // This FileHandleEntry must not be in the lru list already, because it was
-    // in use. Verify this by checking that the lru_entry is pointing to the end,
-    // which cannot be true for any element in the lru list.
+    // in use. Verify this by checking that the lru_list_hook_ is linked.
     DCHECK(!release_elem->lru_list_hook_.is_linked());
-    // Add this to the lru list, establishing links in both directions.
-
+    // Add this to the lru list.
     p.lru_list.push_back(*release_elem);
     if (p.size > p.capacity) EvictHandles(p);
   } else {
@@ -225,9 +223,9 @@ void FileHandleCache::EvictHandles(
       now > unused_handle_timeout_secs_ ? now - unused_handle_timeout_secs_ : 0;
   while (p.lru_list.size() > 0) {
     // Peek at the oldest element
-    CachedHdfsFileHandle oldest_fh = p.lru_list.front();
-    auto oldest_fh_struct= oldest_fh.fh_struct;
-    uint64_t oldest_entry_timestamp = oldest_fh.timestamp_seconds;
+    CachedHdfsFileHandle* oldest_fh = &*p.lru_list.begin();
+    auto oldest_fh_struct= oldest_fh->fh_struct;
+    uint64_t oldest_entry_timestamp = oldest_fh->timestamp_seconds;
     // If the oldest element does not need to be aged out and the cache is not over
     // capacity, then we are done and there is nothing to evict.
     if (p.size <= p.capacity && (unused_handle_timeout_secs_ == 0 ||
@@ -235,8 +233,8 @@ void FileHandleCache::EvictHandles(
       return;
     }
     // Evict the oldest element
-    DCHECK(!oldest_fh.lru_list_hook_.is_linked());
-    oldest_fh_struct->fh_list.erase(oldest_fh_struct->fh_list.iterator_to(oldest_fh));
+    DCHECK(!oldest_fh->in_use);
+    oldest_fh_struct->fh_list.erase(oldest_fh_struct->fh_list.iterator_to(*oldest_fh));
     p.lru_list.pop_front();
     --p.size;
   }
