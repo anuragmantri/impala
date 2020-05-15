@@ -89,6 +89,9 @@ class HdfsFileHandle {
   list_member_hook<> file_handle_list_hook_;
 
   FileHandleStruct* fh_struct;
+
+ private:
+   DISALLOW_COPY_AND_ASSIGN(CachedHdfsFileHandle);
 };
 
 typedef member_hook<CachedHdfsFileHandle, list_member_hook<>,
