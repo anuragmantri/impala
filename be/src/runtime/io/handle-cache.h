@@ -26,6 +26,7 @@
 
 #include "common/hdfs.h"
 #include "common/status.h"
+#include "gutil/macros.h"
 #include "util/aligned-new.h"
 #include "util/spinlock.h"
 #include "util/thread.h"

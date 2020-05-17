@@ -105,17 +105,17 @@ Status FileHandleCache::GetFileHandle(
       for (typename FileHandleListType::iterator fh_it = map_it->second.fh_list.begin();
            fh_it != map_it->second.fh_list.end(); ++fh_it) {
         DCHECK(fh_it != map_it->second.fh_list.end());
-        CachedHdfsFileHandle fh = *fh_it;
-        if (!fh.in_use && fh.mtime() == mtime) {
+        CachedHdfsFileHandle* fh = &(*fh_it);
+        if (!fh->in_use && fh->mtime() == mtime) {
           // This element is currently in the lru_list, which means that lru_entry must
           // be an iterator pointing into the lru_list.
-          DCHECK(fh_it->lru_list_hook_.is_linked());
+          DCHECK(fh->lru_list_hook_.is_linked());
           // Remove the element from the lru_list and designate that it is not on
           // the lru_list by resetting its iterator to point to the end of the list.
-          p.lru_list.erase(p.lru_list.iterator_to(fh));
+          p.lru_list.erase(p.lru_list.iterator_to(*fh));
           *cache_hit = true;
           fh_it->in_use = true;
-          *handle_out = &fh;
+          *handle_out = fh;
           return Status::OK();
         }
       }
