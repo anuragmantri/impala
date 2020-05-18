@@ -233,7 +233,7 @@ void FileHandleCache::EvictHandles(
       return;
     }
     // Evict the oldest element
-    DCHECK(!oldest_fh->in_use);
+    DCHECK(!oldest_fh->in_use && !oldest_fh->lru_list_hook_.is_linked());
     oldest_fh_struct->fh_list.erase(oldest_fh_struct->fh_list.iterator_to(*oldest_fh));
     p.lru_list.pop_front();
     --p.size;
