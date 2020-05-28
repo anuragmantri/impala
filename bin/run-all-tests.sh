@@ -158,14 +158,18 @@ LOG_DIR="${IMPALA_EE_TEST_LOGS_DIR}"
 # Enable core dumps
 ulimit -c unlimited || true
 
+start_impala_cluster() {
+    # TODO-MT: remove --unlock_mt_dop when it is no longer needed.
+  run-step "Starting Impala cluster" start-impala-cluster.log \
+      "${IMPALA_HOME}/bin/start-impala-cluster.py" --log_dir="${IMPALA_EE_TEST_LOGS_DIR}" \
+      ${TEST_START_CLUSTER_ARGS} --impalad_args=--unlock_mt_dop=true
+}
+
 for i in $(seq 1 $NUM_TEST_ITERATIONS)
 do
   TEST_RET_CODE=0
 
-  # TODO-MT: remove --unlock_mt_dop when it is no longer needed.
-  run-step "Starting Impala cluster" start-impala-cluster.log \
-      "${IMPALA_HOME}/bin/start-impala-cluster.py" --log_dir="${IMPALA_EE_TEST_LOGS_DIR}" \
-      ${TEST_START_CLUSTER_ARGS} --impalad_args=--unlock_mt_dop=true
+  start_impala_cluster
 
   if [[ "$BE_TEST" == true ]]; then
     if [[ "$TARGET_FILESYSTEM" == "local" ]]; then
@@ -200,18 +204,24 @@ do
     if [[ "$CODE_COVERAGE" == true ]]; then
       MVN_ARGS+="-DcodeCoverage"
     fi
+    # Run the FE tests first. We run the FE custom cluster tests below since they
+    # restart Impala.
+    MVN_ARGS_TEMP=$MVN_ARGS
+    MVN_ARGS+=" -Dtest=!org.apache.impala.custom*.*Test"
+    if ! "${IMPALA_HOME}/bin/mvn-quiet.sh" -fae test ${MVN_ARGS}; then
+      TEST_RET_CODE=1
+    fi
+
     # Run the FE custom cluster tests only if not running against S3
     if [[ "${TARGET_FILESYSTEM}" != "s3" ]]; then
+      MVN_ARGS=$MVN_ARGS_TEMP
       MVN_ARGS+=" -Dtest=org.apache.impala.custom*.*Test"
       if ! "${IMPALA_HOME}/bin/mvn-quiet.sh" -fae test ${MVN_ARGS}; then
         TEST_RET_CODE=1
       fi
       # Restart the minicluster after running the FE custom cluster tests.
       # TODO-MT: remove --unlock_mt_dop when it is no longer needed.
-      run-step "Starting Impala cluster" start-impala-cluster.log \
-          "${IMPALA_HOME}/bin/start-impala-cluster.py" \
-          --log_dir="${IMPALA_EE_TEST_LOGS_DIR}" ${TEST_START_CLUSTER_ARGS} \
-          --impalad_args=--unlock_mt_dop=true
+      start_impala_cluster
     fi
     popd
   fi
